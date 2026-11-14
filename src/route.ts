@@ -153,7 +153,7 @@ export function check(route: Step[], input: Events, options: CheckOptions = {}):
   let finished = 0;
   let finishedFirstPass = 0;
 
-  // Per-unit state, reused across units (reset via touched lists).
+  // Per-unit state, reused across units and reset for each one.
   const latest: (boolean | undefined)[] = new Array(n).fill(undefined);
   const latestRow: number[] = new Array(n).fill(0);
   const failCount: number[] = new Array(n).fill(0);

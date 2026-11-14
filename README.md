@@ -67,7 +67,8 @@ fail); only reaching a **later** step matters.
 | `incomplete` | Has not passed every required step (opt-in, `--complete`, for a lot that should be finished) |
 | `unknown-step` | Records at a step that is not on the route and not in `--rework-steps` (one finding per step name) |
 
-A fail with no later record is work in progress, not a finding. Optional steps may be skipped, but a fail at an
+Each kind is reported at most once per serial and step. A fail with no later record is work in progress, not a
+finding. Optional steps may be skipped, but a fail at an
 optional step followed by a later step is still `continued-after-fail`.
 
 Yield per step: units with a record there, first pass (the unit's first record at the step is a pass), FPY,
