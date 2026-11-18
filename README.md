@@ -115,8 +115,36 @@ Steps not on the route: 1
   - step "XRAY" is not on the route (1 row, 1 serial, first row 48); add it to the route or to --rework-steps
 ```
 
-Row numbers are CSV record numbers in the events file (header = 1). `--json` gives the summary, per-step yield and
-every finding with its rows; `--limit n` caps findings per kind in the text report (default 50).
+Row numbers are CSV record numbers in the events file (header = 1). `--limit n` caps findings per kind in the text
+and Markdown reports (default 50).
+
+## Output formats
+
+`--json`, `--md` or `--csv`, one at a time (more than one is an input error, exit 2). Exit codes are the same for
+every format.
+
+- `--json`: summary, per-step yield and every finding with its rows.
+- `--md`: Markdown for a ticket or wiki page - summary table (serials, records, steps, finished, finished first
+  pass, WIP, RTY), per-step yield table (units, first pass, FPY, passed (final), fails, retests, records; retests =
+  records after each unit's first record at the step), finding counts per kind and the findings per kind (capped by
+  `--limit`).
+- `--csv`: one row per finding, every finding (`--limit` is ignored), in the text report's kind order; header only
+  when there are none. Columns `kind,serial,step,reached_step,count,serials,steps,rows,detail`; `rows` and `steps`
+  are space separated lists, `detail` is the text message. Cells are quoted per RFC 4180, and cells starting with
+  `=`, `+`, `-`, `@`, tab or CR get a leading `'` so a spreadsheet does not run them as formulas.
+
+```sh
+node dist/cli.js examples/route.csv examples/events.csv --rework-steps repair --csv
+```
+
+```text
+kind,serial,step,reached_step,count,serials,steps,rows,detail
+skipped-step,MTR-0003,AOI,ICT,,,,10,MTR-0003 ran ICT (row 10) but never passed AOI
+out-of-order,MTR-0005,FLASH,CALIB,,,,33,"MTR-0005 ran CALIB (row 33) before passing FLASH (passed later, row 38)"
+continued-after-fail,MTR-0004,FCT,PACK,,,,37 43,MTR-0004 failed FCT (row 37) and ran PACK (row 43) without passing FCT again
+failed-after-later-step,MTR-0007,FCT,PACK,,,,64 60,MTR-0007 passed PACK (row 60) but its latest result at FCT is fail (row 64)
+unknown-step,,XRAY,,1,1,,48,"step ""XRAY"" is not on the route (1 row, 1 serial, first row 48); add it to the route or to --rework-steps"
+```
 
 Exit codes: 0 no findings, 1 findings, 2 input error.
 
@@ -136,5 +164,5 @@ npm run build && npm run smoke   # built CLI end to end, incl. 100,000 units / ~
 
 ## Not yet
 
-Markdown / CSV output, several routes by part number, FPY per day or shift, a station (machine) column under a
+Several routes by part number, FPY per day or shift, a station (machine) column under a
 step, dwell-time limits between steps.
