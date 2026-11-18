@@ -1,0 +1,279 @@
+{
+  "summary": {
+    "steps": 15,
+    "requiredSteps": 14,
+    "events": 73,
+    "serials": 11,
+    "finished": 9,
+    "wip": 1,
+    "finishedFirstPass": 7,
+    "rty": null,
+    "reworkEvents": 3,
+    "unknownEvents": 0,
+    "timeOrdered": true,
+    "hasResult": true,
+    "parts": 2,
+    "unknownPartSerials": 1,
+    "unknownPartEvents": 2
+  },
+  "yields": [],
+  "findings": [
+    {
+      "kind": "skipped-step",
+      "serial": "U3P-002",
+      "step": "HIPOT",
+      "reachedStep": "FCT",
+      "rows": [
+        45
+      ],
+      "message": "U3P-002 ran FCT (row 45) but never passed HIPOT (part MTR-3P)",
+      "part": "MTR-3P"
+    },
+    {
+      "kind": "incomplete",
+      "serial": "U1P-005",
+      "step": "ICT",
+      "steps": [
+        "ICT",
+        "FLASH",
+        "FCT",
+        "PACK"
+      ],
+      "rows": [],
+      "message": "U1P-005 has not passed ICT, FLASH, FCT, PACK (part MTR-1P)",
+      "part": "MTR-1P"
+    },
+    {
+      "kind": "incomplete",
+      "serial": "U3P-002",
+      "step": "HIPOT",
+      "steps": [
+        "HIPOT"
+      ],
+      "rows": [],
+      "message": "U3P-002 has not passed HIPOT (part MTR-3P)",
+      "part": "MTR-3P"
+    },
+    {
+      "kind": "unknown-part",
+      "part": "GW-4G",
+      "rows": [
+        73,
+        74
+      ],
+      "count": 2,
+      "serials": 1,
+      "message": "part \"GW-4G\" has no route (1 serial, 2 rows, first row 73); add its steps to the route file"
+    },
+    {
+      "kind": "part-conflict",
+      "serial": "U3P-005",
+      "part": "MTR-3P",
+      "parts": [
+        "MTR-3P",
+        "MTR-1P"
+      ],
+      "rows": [
+        72
+      ],
+      "count": 1,
+      "message": "U3P-005 has records for part MTR-1P (1 row, first row 72) but its first record is part MTR-3P; checked as MTR-3P"
+    }
+  ],
+  "counts": {
+    "skipped-step": 1,
+    "incomplete": 2,
+    "unknown-part": 1,
+    "part-conflict": 1
+  },
+  "parts": [
+    {
+      "part": "MTR-1P",
+      "summary": {
+        "steps": 6,
+        "requiredSteps": 6,
+        "events": 30,
+        "serials": 5,
+        "finished": 4,
+        "wip": 1,
+        "finishedFirstPass": 3,
+        "rty": 0.6000000000000001,
+        "reworkEvents": 2,
+        "unknownEvents": 0,
+        "timeOrdered": true,
+        "hasResult": true
+      },
+      "yields": [
+        {
+          "step": "SMT",
+          "optional": false,
+          "units": 5,
+          "firstPass": 5,
+          "fpy": 1,
+          "passed": 5,
+          "records": 5,
+          "fails": 0
+        },
+        {
+          "step": "AOI",
+          "optional": false,
+          "units": 5,
+          "firstPass": 5,
+          "fpy": 1,
+          "passed": 5,
+          "records": 5,
+          "fails": 0
+        },
+        {
+          "step": "ICT",
+          "optional": false,
+          "units": 5,
+          "firstPass": 4,
+          "fpy": 0.8,
+          "passed": 4,
+          "records": 5,
+          "fails": 1
+        },
+        {
+          "step": "FLASH",
+          "optional": false,
+          "units": 4,
+          "firstPass": 4,
+          "fpy": 1,
+          "passed": 4,
+          "records": 4,
+          "fails": 0
+        },
+        {
+          "step": "FCT",
+          "optional": false,
+          "units": 4,
+          "firstPass": 3,
+          "fpy": 0.75,
+          "passed": 4,
+          "records": 5,
+          "fails": 1
+        },
+        {
+          "step": "PACK",
+          "optional": false,
+          "units": 4,
+          "firstPass": 4,
+          "fpy": 1,
+          "passed": 4,
+          "records": 4,
+          "fails": 0
+        }
+      ]
+    },
+    {
+      "part": "MTR-3P",
+      "summary": {
+        "steps": 9,
+        "requiredSteps": 8,
+        "events": 41,
+        "serials": 5,
+        "finished": 5,
+        "wip": 0,
+        "finishedFirstPass": 4,
+        "rty": 0.8,
+        "reworkEvents": 1,
+        "unknownEvents": 0,
+        "timeOrdered": true,
+        "hasResult": true
+      },
+      "yields": [
+        {
+          "step": "SMT",
+          "optional": false,
+          "units": 5,
+          "firstPass": 5,
+          "fpy": 1,
+          "passed": 5,
+          "records": 5,
+          "fails": 0
+        },
+        {
+          "step": "AOI",
+          "optional": false,
+          "units": 5,
+          "firstPass": 5,
+          "fpy": 1,
+          "passed": 5,
+          "records": 5,
+          "fails": 0
+        },
+        {
+          "step": "ICT",
+          "optional": false,
+          "units": 5,
+          "firstPass": 5,
+          "fpy": 1,
+          "passed": 5,
+          "records": 5,
+          "fails": 0
+        },
+        {
+          "step": "FLASH",
+          "optional": false,
+          "units": 5,
+          "firstPass": 5,
+          "fpy": 1,
+          "passed": 5,
+          "records": 5,
+          "fails": 0
+        },
+        {
+          "step": "CALIB",
+          "optional": false,
+          "units": 5,
+          "firstPass": 4,
+          "fpy": 0.8,
+          "passed": 5,
+          "records": 6,
+          "fails": 1
+        },
+        {
+          "step": "HIPOT",
+          "optional": false,
+          "units": 4,
+          "firstPass": 4,
+          "fpy": 1,
+          "passed": 4,
+          "records": 4,
+          "fails": 0
+        },
+        {
+          "step": "BURNIN",
+          "optional": true,
+          "units": 0,
+          "firstPass": 0,
+          "fpy": null,
+          "passed": 0,
+          "records": 0,
+          "fails": 0
+        },
+        {
+          "step": "FCT",
+          "optional": false,
+          "units": 5,
+          "firstPass": 5,
+          "fpy": 1,
+          "passed": 5,
+          "records": 5,
+          "fails": 0
+        },
+        {
+          "step": "PACK",
+          "optional": false,
+          "units": 5,
+          "firstPass": 5,
+          "fpy": 1,
+          "passed": 5,
+          "records": 5,
+          "fails": 0
+        }
+      ]
+    }
+  ]
+}

@@ -1,4 +1,5 @@
-import { pct, TITLES } from './report.js';
+import type { PeriodYield } from './periods.js';
+import { pct, periodRows, periodTitle, TITLES } from './report.js';
 import { type Finding, KINDS, type Report, type StepYield, type Summary } from './route.js';
 
 /**
@@ -50,6 +51,22 @@ function mdYield(yields: StepYield[]): string[] {
   ];
 }
 
+/** FPY-per-period section (byDay / shifts only); `level` is the heading prefix. */
+function mdPeriods(report: Report, periods: PeriodYield[] | undefined, yields: StepYield[], level: string): string[] {
+  const info = report.periodSettings;
+  if (!info || !periods) return [];
+  const t = periodTitle(info);
+  const out = ['', `${level} ${t.name}`, '', `${mdCell(t.detail)}.`, ''];
+  if (!periods.length) return [...out, 'No records at route steps.'];
+  const [head, ...rows] = periodRows(info, periods, yields);
+  return [
+    ...out,
+    `| ${head.map(mdCell).join(' | ')} |`,
+    `| --- | ${head.slice(1).map(() => '---:').join(' | ')} |`,
+    ...rows.map((r) => `| ${r.map(mdCell).join(' | ')} |`),
+  ];
+}
+
 /** Markdown summary and per-step yield (single route). */
 function mdSingle(report: Report): string[] {
   const s = report.summary;
@@ -66,6 +83,7 @@ function mdSingle(report: Report): string[] {
     '## Yield per step',
     '',
     ...mdYield(report.yields),
+    ...mdPeriods(report, report.periods, report.yields, '##'),
   ];
 }
 
@@ -94,6 +112,7 @@ function mdParts(report: Report): string[] {
       `| ${ps.serials} | ${ps.events} | ${ps.steps} | ${ps.requiredSteps} | ${ps.finished} | ${ffp(ps)} | ${ps.wip} | ${pct(ps.rty)} |`,
       '',
       ...mdYield(p.yields),
+      ...mdPeriods(report, p.periods, p.yields, '###'),
     );
   }
   return out;

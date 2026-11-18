@@ -207,12 +207,67 @@ Serials with records for more than one part: 1
   - U3P-005 has records for part MTR-1P (1 row, first row 72) but its first record is part MTR-3P; checked as MTR-3P
 ```
 
+## FPY per day / per shift
+
+First-pass yield drifts with the shift, the operator crew or the day's material lot, so a single FPY over a week
+hides the bad night. With a `timestamp` column, opt-in flags add an FPY table per period (the same flag names and
+shift syntax as [oee-log-check](https://github.com/guangyou0716/oee-log-check)):
+
+- `--by-day` - one row per day. A day starts at `--day-start` (default 00:00; e.g. 07:00 when the first shift starts
+  at 7) and is labelled with the date it starts on.
+- `--shifts Day=07:00,Night=19:00` (or `A=07:00,B=15:00,C=23:00`) - a shift calendar: each shift starts at its time
+  every day and lasts until the next one starts. Alone, one row per shift, **summed over every day**.
+- `--by-day --shifts ...` - one row per day **and** shift. A shift counts on the day it **starts**, so a night shift's
+  records after midnight count on the day before (`--day-start` does not apply here).
+
+Each unit's **first** record at a step counts in the period of its timestamp - that record decides first pass. A
+retest in a later shift is not counted again, so per-period units and first passes add up to the per-step yield
+table. Per period: units (with a first record at some route step in the period), first pass / units and FPY per
+step, and RTY over required steps that have units in the period. With routes per part number there is one table
+per part. A record exactly on a boundary belongs to the period that starts there; periods without records are left
+out. For timestamps with a zone offset, boundaries use the offset on the first row of the file unless
+`--day-offset +08:00` is given (timestamps without a zone are taken as written).
+
+Text, `--json` (`periodSettings`: `by` day / shift / day-shift, `dayStart`, `offset`, `shifts`; `periods`: per period
+`period`, `day`, `shift`, `units`, `steps[]` with `units`, `firstPass`, `fpy`, and `rty`; with routes per part each
+part has `periods` and the top-level list is empty) and `--md` (a section after the yield table). `--csv` stays
+one row per finding, so it cannot be combined with these flags (exit 2). Without a timestamp column the flags are
+an input error (exit 2). Without the flags the output is byte-for-byte the same as before. Period tables raise no
+findings of their own.
+
+`examples/shifts/` is made-up data: 12 boards over two days, Day 07:00-19:00 / Night 19:00-07:00. PCB-109 fails FCT
+at 06:48 (Night) and passes the retest at 07:17 (Day) - the fail counts against the night shift of 2026-11-12.
+
+```sh
+node dist/cli.js examples/shifts/route.csv examples/shifts/events.csv --rework-steps repair --by-day --shifts Day=07:00,Night=19:00
+```
+
+```text
+route-check: 12 serials, 62 records, 4 route steps (4 required), replayed by timestamp
+Finished: 12 (first pass 6, 50.0%), WIP: 0, RTY: 55.6%, rework records: 7
+
+Step  Units  First pass     FPY  Passed  Records  Fails
+SMT      12          12  100.0%      12       12      0
+ICT      12          10   83.3%      12       14      2
+FCT      12           8   66.7%      12       17      5
+PACK     12          12  100.0%      12       12      0
+
+FPY by day and shift (Day 07:00-19:00, Night 19:00-07:00; a shift counts on the day it starts; each unit's first record at a step counts in the period of its timestamp; cells: first pass / units and FPY):
+Day / shift       Units         SMT         ICT        FCT        PACK    RTY
+2026-11-12 Day        5  5/5 100.0%   4/5 80.0%  4/5 80.0%  4/4 100.0%  64.0%
+2026-11-12 Night      5  4/4 100.0%   3/4 75.0%  2/4 50.0%  4/4 100.0%  37.5%
+2026-11-13 Day        4  3/3 100.0%  3/3 100.0%  2/3 66.7%  4/4 100.0%  66.7%
+
+No findings.
+```
+
 ## Output formats
 
 `--json`, `--md` or `--csv`, one at a time (more than one is an input error, exit 2). Exit codes are the same for
 every format.
 
-- `--json`: summary, per-step yield and every finding with its rows.
+- `--json`: summary, per-step yield and every finding with its rows (plus `periodSettings` / `periods` with
+  `--by-day` / `--shifts`).
 - `--md`: Markdown for a ticket or wiki page - summary table (serials, records, steps, finished, finished first
   pass, WIP, RTY), per-step yield table (units, first pass, FPY, passed (final), fails, retests, records; retests =
   records after each unit's first record at the step), finding counts per kind and the findings per kind (capped by
@@ -245,6 +300,8 @@ const report = check(parseRoute(routeCsv), parseEvents(eventsCsv), { reworkSteps
 // Routes per part number:
 const routes = parseRoutes(routeCsv); // routes.parts is set when the file has a part column
 const byPart = routes.parts ? checkParts(routes.parts, parseEvents(eventsCsv)) : check(routes.steps, parseEvents(eventsCsv));
+// FPY per day and shift (needs timestamps): report.periodSettings, report.periods (per part: parts[i].periods)
+const daily = check(parseRoute(routeCsv), parseEvents(eventsCsv), { byDay: true, shifts: 'Day=07:00,Night=19:00' });
 ```
 
 ## Development
@@ -256,4 +313,4 @@ npm run build && npm run smoke   # built CLI end to end, incl. 100,000 units / ~
 
 ## Not yet
 
-FPY per day or shift, a station (machine) column under a step, dwell-time limits between steps.
+A station (machine) column under a step, dwell-time limits between steps.

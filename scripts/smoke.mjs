@@ -80,3 +80,22 @@ if (
   fail(`large: status ${big.status} ${JSON.stringify(bd.summary)} ${JSON.stringify(bd.counts)} ${JSON.stringify(fct)} ${big.stderr}`);
 }
 console.log(`smoke: ok large (100,000 units, ${rows.length.toLocaleString('en')} timestamped records, reversed) in ${ms} ms: 1 skipped, 1 continued after fail`);
+
+// FPY per day and shift on the same large log: per-period first records add up to the per-step yield.
+const t1 = Date.now();
+const per = run(cli, [join(dir, 'route.csv'), join(dir, 'events.csv'), '--rework-steps', 'REPAIR', '--json', '--by-day', '--shifts', 'A=07:00,B=15:00,C=23:00']);
+const pdd = per.stdout ? JSON.parse(per.stdout) : {};
+const ms1 = Date.now() - t1;
+const k = steps.indexOf('FCT');
+const sum = (f) => (pdd.periods ?? []).reduce((a, p) => a + f(p), 0);
+if (
+  per.status !== 1 ||
+  pdd.periodSettings?.by !== 'day-shift' ||
+  !(pdd.periods?.length > 400) ||
+  sum((p) => p.steps[k].units) !== 100_000 ||
+  sum((p) => p.steps[k].firstPass) !== 100_000 - 2001 ||
+  JSON.stringify(pdd.counts) !== JSON.stringify(bd.counts)
+) {
+  fail(`periods: status ${per.status} ${JSON.stringify(pdd.periodSettings)} ${pdd.periods?.length} ${per.stderr}`);
+}
+console.log(`smoke: ok --by-day --shifts on the large log in ${ms1} ms: ${pdd.periods.length} day/shift periods, FCT first records add up`);
