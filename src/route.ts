@@ -1,5 +1,5 @@
 import { InputError } from './errors.js';
-import { type Events, type Step, stepKey } from './input.js';
+import { type Event, type Events, type PartRoute, type Step, stepKey } from './input.js';
 
 export type FindingKind =
   | 'skipped-step'
@@ -8,7 +8,9 @@ export type FindingKind =
   | 'failed-after-later-step'
   | 'too-many-fails'
   | 'incomplete'
-  | 'unknown-step';
+  | 'unknown-step'
+  | 'unknown-part'
+  | 'part-conflict';
 
 export const KINDS: FindingKind[] = [
   'skipped-step',
@@ -18,14 +20,16 @@ export const KINDS: FindingKind[] = [
   'too-many-fails',
   'incomplete',
   'unknown-step',
+  'unknown-part',
+  'part-conflict',
 ];
 
 export interface Finding {
   kind: FindingKind;
-  /** Unit serial (absent for unknown-step, which is one finding per step name). */
+  /** Unit serial (absent for unknown-step and unknown-part, which are one finding per step / part name). */
   serial?: string;
-  /** Route step the finding is about (the skipped / failed / unknown step). */
-  step: string;
+  /** Route step the finding is about (the skipped / failed / unknown step); absent for unknown-part and part-conflict. */
+  step?: string;
   /**
    * Later step the unit reached while `step` was not passed (skipped-step, out-of-order, continued-after-fail), or the
    * later step it had already passed when `step` was re-run and failed (failed-after-later-step).
@@ -43,6 +47,13 @@ export interface Finding {
   serials?: number;
   /** incomplete: required steps without a latest pass. */
   steps?: string[];
+  /**
+   * Routes per part only: the part whose route the serial was checked against (unknown-part: the part without a
+   * route; part-conflict: the serial's first part).
+   */
+  part?: string;
+  /** part-conflict: every part seen for the serial, first one first. */
+  parts?: string[];
   message: string;
 }
 
@@ -78,13 +89,32 @@ export interface Summary {
   unknownEvents: number;
   timeOrdered: boolean;
   hasResult: boolean;
+  /** Routes per part only: number of part routes. */
+  parts?: number;
+  /** Routes per part only: serials / records whose part has no route (not checked, not in yield or WIP). */
+  unknownPartSerials?: number;
+  unknownPartEvents?: number;
+}
+
+/** Routes per part: one part's summary (steps, yield, finished / WIP, RTY) and per-step yield. */
+export interface PartReport {
+  part: string;
+  summary: Summary;
+  yields: StepYield[];
 }
 
 export interface Report {
+  /**
+   * Routes per part: totals over all parts (steps / requiredSteps summed over the part routes, rty null - see
+   * `parts` for each part's RTY; serials includes unknownPartSerials, wip does not).
+   */
   summary: Summary;
+  /** Per-step yield of the single route (empty with routes per part - see `parts`). */
   yields: StepYield[];
   findings: Finding[];
   counts: Partial<Record<FindingKind, number>>;
+  /** Routes per part only, in route-file order. */
+  parts?: PartReport[];
 }
 
 export interface CheckOptions {
@@ -105,6 +135,10 @@ interface UnitEvent {
 const ROWS_SHOWN = 20;
 
 export function check(route: Step[], input: Events, options: CheckOptions = {}): Report {
+  return checkRoute(route, input, options);
+}
+
+function checkRoute(route: Step[], input: Events, options: CheckOptions, part?: string): Report {
   const index = new Map(route.map((s, i) => [stepKey(s.name), i]));
   const rework = new Set<string>();
   for (const r of options.reworkSteps ?? []) {
@@ -286,11 +320,16 @@ export function check(route: Step[], input: Events, options: CheckOptions = {}):
     if (!y.optional && y.fpy !== null) rty = (rty ?? 1) * y.fpy;
   }
 
-  // Order: by kind (KINDS order), stable within a kind (serial first-seen order, then route order).
-  const rank = new Map(KINDS.map((k, i) => [k, i]));
-  const ordered = findings.map((f, i) => ({ f, i })).sort((a, b) => rank.get(a.f.kind)! - rank.get(b.f.kind)! || a.i - b.i).map((x) => x.f);
-  const counts: Partial<Record<FindingKind, number>> = {};
-  for (const f of ordered) counts[f.kind] = (counts[f.kind] ?? 0) + 1;
+  if (part !== undefined) {
+    for (const f of findings) {
+      f.part = part;
+      f.message =
+        f.kind === 'unknown-step'
+          ? f.message.replace('is not on the route (', `is not on the route of part "${part}" (`).replace('add it to the route', "add it to the part's route")
+          : `${f.message} (part ${part})`;
+    }
+  }
+  const { ordered, counts } = byKind(findings);
 
   return {
     summary: {
@@ -310,5 +349,126 @@ export function check(route: Step[], input: Events, options: CheckOptions = {}):
     yields,
     findings: ordered,
     counts,
+  };
+}
+
+/** Orders findings by kind (KINDS order), stable within a kind, and counts them. */
+function byKind(findings: Finding[]): { ordered: Finding[]; counts: Partial<Record<FindingKind, number>> } {
+  // Stable within a kind: serial first-seen order, then route order (routes per part: part order first).
+  const rank = new Map(KINDS.map((k, i) => [k, i]));
+  const ordered = findings.map((f, i) => ({ f, i })).sort((a, b) => rank.get(a.f.kind)! - rank.get(b.f.kind)! || a.i - b.i).map((x) => x.f);
+  const counts: Partial<Record<FindingKind, number>> = {};
+  for (const f of ordered) counts[f.kind] = (counts[f.kind] ?? 0) + 1;
+  return { ordered, counts };
+}
+
+const plural = (n: number, word: string) => `${n} ${word}${n === 1 ? '' : 's'}`;
+
+/**
+ * Routes per part number. Each serial's part is the part of its first record (in replay order); the serial is
+ * checked against that part's route only. A serial with records naming another part gets a part-conflict finding
+ * (it is still checked against its first part). Serials whose part has no route give one unknown-part finding per
+ * part and are left out of yield, finished and WIP. Every event needs a part (input error otherwise).
+ */
+export function checkParts(parts: PartRoute[], input: Events, options: CheckOptions = {}): Report {
+  if (!input.hasPart) throw new InputError('events: no part column (the route has one route per part, so every record needs a part number).');
+  const routes = new Map(parts.map((p) => [stepKey(p.part), p]));
+  for (const r of options.reworkSteps ?? []) {
+    for (const p of parts) {
+      if (p.steps.some((st) => stepKey(st.name) === stepKey(r))) {
+        throw new InputError(`--rework-steps: "${r}" is a step on the route of part "${p.part}"; rework steps must be off every route.`);
+      }
+    }
+  }
+
+  const buckets = new Map<string, Event[]>(parts.map((p) => [stepKey(p.part), []]));
+  const serialPart = new Map<string, string>();
+  const conflicts = new Map<string, { parts: string[]; keys: Set<string>; rows: number[]; count: number }>();
+  const unknown = new Map<string, { name: string; rows: number[]; count: number; serials: Set<string> }>();
+  for (const e of input.events) {
+    if (e.part === undefined) throw new InputError(`events row ${e.row}: part is empty (the route has one route per part, so every record needs one).`);
+    const key = stepKey(e.part);
+    let assigned = serialPart.get(e.serial);
+    if (assigned === undefined) serialPart.set(e.serial, (assigned = key));
+    else if (key !== assigned) {
+      let c = conflicts.get(e.serial);
+      if (!c) conflicts.set(e.serial, (c = { parts: [], keys: new Set(), rows: [], count: 0 }));
+      c.count++;
+      if (c.rows.length < ROWS_SHOWN) c.rows.push(e.row);
+      if (!c.keys.has(key)) {
+        c.keys.add(key);
+        c.parts.push(e.part);
+      }
+    }
+    const bucket = buckets.get(assigned);
+    if (bucket) bucket.push(e);
+    else {
+      let u = unknown.get(assigned);
+      if (!u) unknown.set(assigned, (u = { name: e.part, rows: [], count: 0, serials: new Set() }));
+      u.count++;
+      u.serials.add(e.serial);
+      if (u.rows.length < ROWS_SHOWN) u.rows.push(e.row);
+    }
+  }
+
+  const reports: PartReport[] = [];
+  const findings: Finding[] = [];
+  for (const p of parts) {
+    const r = checkRoute(p.steps, { ...input, events: buckets.get(stepKey(p.part))! }, options, p.part);
+    reports.push({ part: p.part, summary: r.summary, yields: r.yields });
+    findings.push(...r.findings);
+  }
+  for (const u of unknown.values()) {
+    findings.push({
+      kind: 'unknown-part',
+      part: u.name,
+      rows: u.rows,
+      count: u.count,
+      serials: u.serials.size,
+      message: `part "${u.name}" has no route (${plural(u.serials.size, 'serial')}, ${plural(u.count, 'row')}, first row ${u.rows[0]}); add its steps to the route file`,
+    });
+  }
+  for (const [serial, c] of conflicts) {
+    const first = routes.get(serialPart.get(serial)!)?.part ?? unknown.get(serialPart.get(serial)!)!.name;
+    findings.push({
+      kind: 'part-conflict',
+      serial,
+      part: first,
+      parts: [first, ...c.parts],
+      rows: c.rows,
+      count: c.count,
+      message: `${serial} has records for part ${c.parts.join(', ')} (${plural(c.count, 'row')}, first row ${c.rows[0]}) but its first record is part ${first}; checked as ${first}`,
+    });
+  }
+  const { ordered, counts } = byKind(findings);
+  const sum = (f: (s: Summary) => number) => reports.reduce((a, r) => a + f(r.summary), 0);
+  let unknownPartEvents = 0;
+  let unknownPartSerials = 0;
+  for (const u of unknown.values()) {
+    unknownPartEvents += u.count;
+    unknownPartSerials += u.serials.size;
+  }
+  return {
+    summary: {
+      steps: sum((s) => s.steps),
+      requiredSteps: sum((s) => s.requiredSteps),
+      events: input.events.length,
+      serials: serialPart.size,
+      finished: sum((s) => s.finished),
+      wip: sum((s) => s.wip),
+      finishedFirstPass: sum((s) => s.finishedFirstPass),
+      rty: null,
+      reworkEvents: sum((s) => s.reworkEvents),
+      unknownEvents: sum((s) => s.unknownEvents),
+      timeOrdered: input.timeOrdered,
+      hasResult: input.hasResult,
+      parts: parts.length,
+      unknownPartSerials,
+      unknownPartEvents,
+    },
+    yields: [],
+    findings: ordered,
+    counts,
+    parts: reports,
   };
 }

@@ -1,0 +1,38 @@
+route-check: 10 serials, 80 records, 8 route steps (7 required), replayed by timestamp
+Finished: 9 (first pass 4, 44.4%), WIP: 1, RTY: 59.3%, rework records: 5, records at steps not on the route: 1
+
+Step               Units  First pass     FPY  Passed  Records  Fails
+SMT                   10          10  100.0%      10       10      0
+AOI                    9           9  100.0%       9        9      0
+ICT                    9           8   88.9%       9       10      1
+FLASH                  9           9  100.0%       9       10      0
+CALIB                  9           9  100.0%       9       11      0
+BURNIN (optional)      1           1  100.0%       1        1      0
+FCT                    9           6   66.7%       7       14      6
+PACK                   9           9  100.0%       9        9      0
+
+Findings: 10
+
+Skipped steps (a later step ran, this required step never passed): 1
+  - MTR-0003 ran ICT (row 10) but never passed AOI
+
+Out of order (a later step ran before this step was passed): 1
+  - MTR-0005 ran CALIB (row 33) before passing FLASH (passed later, row 38)
+
+Continued after fail (a later step ran while the latest result here was fail): 1
+  - MTR-0004 failed FCT (row 37) and ran PACK (row 43) without passing FCT again
+
+Failed after a later step (re-run failed after the unit had passed a later step): 1
+  - MTR-0007 passed PACK (row 60) but its latest result at FCT is fail (row 64)
+
+Too many fails at one step (--max-fails): 1
+  - MTR-0010 failed FCT 3 times (limit 2)
+
+Incomplete units (--complete): 4
+  - MTR-0003 has not passed AOI
+  - MTR-0004 has not passed FCT
+  - MTR-0006 has not passed ICT, FLASH, CALIB, FCT, PACK
+  - MTR-0007 has not passed FCT
+
+Steps not on the route: 1
+  - step "XRAY" is not on the route (1 row, 1 serial, first row 48); add it to the route or to --rework-steps

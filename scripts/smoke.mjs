@@ -27,6 +27,20 @@ for (const bin of [cli, link]) {
 }
 console.log('smoke: ok example (direct and via symlink): 10 serials, 9 finished, 5 findings, exit 1');
 
+// Routes per part number: example with two part routes, one part without a route and one part conflict.
+const pr = run(cli, [ex('parts/route.csv'), ex('parts/events.csv'), '--rework-steps', 'repair', '--json']);
+const pd = pr.stdout ? JSON.parse(pr.stdout) : {};
+if (
+  pr.status !== 1 ||
+  pd.parts?.length !== 2 ||
+  pd.summary?.serials !== 11 ||
+  pd.summary?.finished !== 9 ||
+  JSON.stringify(pd.counts) !== JSON.stringify({ 'skipped-step': 1, 'unknown-part': 1, 'part-conflict': 1 })
+) {
+  fail(`parts example: status ${pr.status} ${JSON.stringify(pd.summary)} ${JSON.stringify(pd.counts)} ${pr.stderr}`);
+}
+console.log('smoke: ok parts example: 2 part routes, 11 serials, 9 finished, 3 findings, exit 1');
+
 // 100,000 units x 7 steps, timestamped; every 50th unit fails FCT once and is retested after REPAIR;
 // unit 777 skips AOI, unit 1234 goes on to PACK after an FCT fail. File order reversed (replayed by time).
 const steps = ['SMT', 'AOI', 'ICT', 'FLASH', 'CALIB', 'FCT', 'PACK'];

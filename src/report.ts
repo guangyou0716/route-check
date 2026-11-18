@@ -1,4 +1,4 @@
-import { type FindingKind, KINDS, type Report } from './route.js';
+import { type FindingKind, KINDS, type Report, type Summary } from './route.js';
 
 export const TITLES: Record<FindingKind, string> = {
   'skipped-step': 'Skipped steps (a later step ran, this required step never passed)',
@@ -8,6 +8,8 @@ export const TITLES: Record<FindingKind, string> = {
   'too-many-fails': 'Too many fails at one step (--max-fails)',
   incomplete: 'Incomplete units (--complete)',
   'unknown-step': 'Steps not on the route',
+  'unknown-part': 'Parts without a route',
+  'part-conflict': 'Serials with records for more than one part',
 };
 
 export const pct = (v: number | null) => (v === null ? '-' : `${(v * 100).toFixed(1)}%`);
@@ -17,7 +19,7 @@ function pad(rows: string[][]): string {
   return rows.map((r) => r.map((v, c) => (c === 0 ? v.padEnd(widths[c]) : v.padStart(widths[c]))).join('  ').trimEnd()).join('\n');
 }
 
-export function yieldRows(report: Report): string[][] {
+export function yieldRows(report: Pick<Report, 'yields'>): string[][] {
   return [
     ['Step', 'Units', 'First pass', 'FPY', 'Passed', 'Records', 'Fails'],
     ...report.yields.map((y) => [
@@ -35,15 +37,18 @@ export function yieldRows(report: Report): string[][] {
 export function textReport(report: Report, limit: number): string {
   const s = report.summary;
   const out: string[] = [];
-  out.push(
-    `route-check: ${s.serials} serials, ${s.events} records, ${s.steps} route steps (${s.requiredSteps} required)` +
-      `${s.timeOrdered ? ', replayed by timestamp' : ', file order'}${s.hasResult ? '' : ', no result column (all records = pass)'}`,
-  );
-  out.push(
-    `Finished: ${s.finished} (first pass ${s.finishedFirstPass}${s.finished ? `, ${pct(s.finishedFirstPass / s.finished)}` : ''}), WIP: ${s.wip}, RTY: ${pct(s.rty)}` +
-      `${s.reworkEvents ? `, rework records: ${s.reworkEvents}` : ''}${s.unknownEvents ? `, records at steps not on the route: ${s.unknownEvents}` : ''}`,
-  );
-  out.push('', pad(yieldRows(report)));
+  if (report.parts) partsText(report, out);
+  else {
+    out.push(
+      `route-check: ${s.serials} serials, ${s.events} records, ${s.steps} route steps (${s.requiredSteps} required)` +
+        `${s.timeOrdered ? ', replayed by timestamp' : ', file order'}${s.hasResult ? '' : ', no result column (all records = pass)'}`,
+    );
+    out.push(
+      `${finishedText(s)}, RTY: ${pct(s.rty)}` +
+        `${s.reworkEvents ? `, rework records: ${s.reworkEvents}` : ''}${s.unknownEvents ? `, records at steps not on the route: ${s.unknownEvents}` : ''}`,
+    );
+    out.push('', pad(yieldRows(report)));
+  }
   if (!report.findings.length) {
     out.push('', 'No findings.');
     return out.join('\n') + '\n';
@@ -57,6 +62,32 @@ export function textReport(report: Report, limit: number): string {
     if (list.length > limit) out.push(`  ... ${list.length - limit} more (use --json or a higher --limit)`);
   }
   return out.join('\n') + '\n';
+}
+
+const finishedText = (s: Summary) => `Finished: ${s.finished} (first pass ${s.finishedFirstPass}${s.finished ? `, ${pct(s.finishedFirstPass / s.finished)}` : ''}), WIP: ${s.wip}`;
+
+/** Text summary and per-part yield tables (routes per part). */
+function partsText(report: Report, out: string[]): void {
+  const s = report.summary;
+  out.push(
+    `route-check: ${s.serials} serials, ${s.events} records, ${s.parts} part routes (${s.steps} steps, ${s.requiredSteps} required)` +
+      `${s.timeOrdered ? ', replayed by timestamp' : ', file order'}${s.hasResult ? '' : ', no result column (all records = pass)'}`,
+  );
+  out.push(
+    `${finishedText(s)}` +
+      `${s.reworkEvents ? `, rework records: ${s.reworkEvents}` : ''}${s.unknownEvents ? `, records at steps not on the route: ${s.unknownEvents}` : ''}` +
+      `${s.unknownPartSerials ? `, serials of parts without a route: ${s.unknownPartSerials} (${s.unknownPartEvents} records)` : ''}`,
+  );
+  for (const p of report.parts!) {
+    const ps = p.summary;
+    out.push(
+      '',
+      `Part ${p.part}: ${ps.serials} serials, ${ps.events} records, ${ps.steps} route steps (${ps.requiredSteps} required)`,
+      `${finishedText(ps)}, RTY: ${pct(ps.rty)}`,
+      '',
+      pad(yieldRows(p)),
+    );
+  }
 }
 
 export function jsonReport(report: Report): string {
