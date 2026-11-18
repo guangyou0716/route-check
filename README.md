@@ -65,6 +65,7 @@ fail); only reaching a **later** step matters.
 | `continued-after-fail` | Ran a later step while its latest result at this step was fail |
 | `failed-after-later-step` | Latest result at this step is fail, after the unit had already passed a later step (e.g. a re-test after packing) |
 | `too-many-fails` | More fails at one step than `--max-fails n` (opt-in) |
+| `dwell-exceeded` | Took longer than a `--max-dwell` limit from one step to a later one (opt-in, needs timestamps) |
 | `incomplete` | Has not passed every required step (opt-in, `--complete`, for a lot that should be finished) |
 | `unknown-step` | Records at a step that is not on the route and not in `--rework-steps` (one finding per step name) |
 | `unknown-part` | Routes per part only: serials whose part has no route (one finding per part) |
@@ -314,13 +315,76 @@ Continued after fail (a later step ran while the latest result here was fail): 1
   - BRD-210 failed FCT (row 43) and ran PACK (row 49) without passing FCT again
 ```
 
+## Dwell limits between steps
+
+Some steps must follow each other within a time window: conformal coating must be cured before test, a board must
+be packed within hours of final test, a unit must not wait too long between SMT and AOI. `--max-dwell` (opt-in,
+needs a timestamp column) sets a maximum time between two route steps:
+
+```sh
+--max-dwell 'FCT>PACK=2h'                    # one pair
+--max-dwell 'SMT>AOI=30m,FCT>PACK=2h'        # several, comma separated
+--max-dwell 'SMT>AOI=30m' --max-dwell 'FCT>PACK=1h30m'   # or repeated
+```
+
+Quote the value: `>` is a redirect in the shell. Durations use `d`, `h`, `m`, `s`, largest unit first (`90s`,
+`30m`, `2h`, `1h30m`, `1.5h`, `2d`); a bare number is not accepted.
+
+- **Rule.** Per unit and pair `FROM>TO`: dwell = the time of the unit's **first record at TO** minus the time of its
+  **latest pass at FROM** before that record. Repair and retests at FROM therefore do not count (the clock starts
+  at the pass that released the unit), and a fail at TO is still an arrival. A unit that goes back and reaches TO
+  again is measured once. A dwell **over** the limit is a `dwell-exceeded` finding; exactly the limit is not.
+- Units that never reached TO (work in progress), or reached it without a pass at FROM (already `skipped-step` /
+  `out-of-order`), are not measured. FROM and TO need not be adjacent.
+- Both steps must be on the route with FROM before TO, otherwise exit 2 (unknown step, reversed pair, same step,
+  pair given twice, bad duration, or no timestamp column). Step names match without regard to case. With routes
+  per part number a pair applies to every part route that has both steps (at least one must; reversed on any part
+  is an error), with a table per part.
+- Timestamps are compared as instants: zoned stamps (`Z`, `+08:00`) are converted, zone-less stamps are taken as
+  written (one style per file, as for the replay).
+- Output: a table per pair (limit, units measured, exceeded, median and max dwell) in text and `--md`; `--json`
+  adds `dwell[]` (`from`, `to`, `limitMs`, `units`, `exceeded`, `medianMs`, `maxMs`; per part in `parts[].dwell`)
+  and `dwellMs` / `limitMs` on each finding. Findings honour `--limit` in text / Markdown and are all in `--csv`
+  (`step` = FROM, `reached_step` = TO, `rows` = the FROM pass row and the TO row). Without the flag the output is
+  byte-for-byte the same as before.
+
+On the made-up `examples/shifts/` log:
+
+```sh
+node dist/cli.js examples/shifts/route.csv examples/shifts/events.csv --rework-steps repair --max-dwell 'ICT>FCT=20m,SMT>PACK=50m' --limit 3
+```
+
+```text
+route-check: 12 serials, 62 records, 4 route steps (4 required), replayed by timestamp
+Finished: 12 (first pass 6, 50.0%), WIP: 0, RTY: 55.6%, rework records: 7
+
+Step  Units  First pass     FPY  Passed  Records  Fails
+SMT      12          12  100.0%      12       12      0
+ICT      12          10   83.3%      12       14      2
+FCT      12           8   66.7%      12       17      5
+PACK     12          12  100.0%      12       12      0
+
+Dwell between steps (per unit: from its latest pass at the first step to its first record at the second; over the limit = finding):
+Steps       Limit  Units  Exceeded  Median    Max
+ICT > FCT     20m     12         0     14m    14m
+SMT > PACK    50m     12         6  56m30s  1h40m
+
+Findings: 6
+
+Dwell over the limit between steps (--max-dwell): 6
+  - PCB-102 reached PACK (row 11) 1h11m after passing SMT (row 6); limit 50m
+  - PCB-104 reached PACK (row 21) 1h11m after passing SMT (row 16); limit 50m
+  - PCB-106 reached PACK (row 31) 1h11m after passing SMT (row 26); limit 50m
+  ... 3 more (use --json or a higher --limit)
+```
+
 ## Output formats
 
 `--json`, `--md` or `--csv`, one at a time (more than one is an input error, exit 2). Exit codes are the same for
 every format.
 
 - `--json`: summary, per-step yield and every finding with its rows (plus `periodSettings` / `periods` with
-  `--by-day` / `--shifts`, and `yields[].stations` with `--station-column`).
+  `--by-day` / `--shifts`, `yields[].stations` with `--station-column`, and `dwell` with `--max-dwell`).
 - `--md`: Markdown for a ticket or wiki page - summary table (serials, records, steps, finished, finished first
   pass, WIP, RTY), per-step yield table (units, first pass, FPY, passed (final), fails, retests, records; retests =
   records after each unit's first record at the step), finding counts per kind and the findings per kind (capped by
@@ -348,7 +412,7 @@ Exit codes: 0 no findings, 1 findings, 2 input error.
 ## Library
 
 ```ts
-import { check, checkParts, parseEvents, parseRoute, parseRoutes } from './dist/index.js';
+import { check, checkParts, parseDwellLimits, parseEvents, parseRoute, parseRoutes } from './dist/index.js';
 const report = check(parseRoute(routeCsv), parseEvents(eventsCsv), { reworkSteps: ['REPAIR'], maxFails: 3 });
 // Routes per part number:
 const routes = parseRoutes(routeCsv); // routes.parts is set when the file has a part column
@@ -357,6 +421,8 @@ const byPart = routes.parts ? checkParts(routes.parts, parseEvents(eventsCsv)) :
 const daily = check(parseRoute(routeCsv), parseEvents(eventsCsv), { byDay: true, shifts: 'Day=07:00,Night=19:00' });
 // Yield per station: report.yields[i].stations
 const perStation = check(parseRoute(routeCsv), parseEvents(eventsCsv, { stationColumn: 'machine' }));
+// Dwell limits (needs timestamps): report.dwell, findings of kind dwell-exceeded
+const dwell = check(parseRoute(routeCsv), parseEvents(eventsCsv), { maxDwell: parseDwellLimits('FCT>PACK=2h') });
 ```
 
 ## Development
@@ -368,4 +434,4 @@ npm run build && npm run smoke   # built CLI end to end, incl. 100,000 units / ~
 
 ## Not yet
 
-Dwell-time limits between steps.
+Real MES export presets (column names / result words of specific systems) need real samples.

@@ -2,6 +2,7 @@
 import { readFileSync, realpathSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { parseArgs } from 'node:util';
+import { parseDwellLimits } from './dwell.js';
 import { InputError } from './errors.js';
 import { csvReport, mdReport } from './formats.js';
 import { listFlag, parseEvents, parseRoutes } from './input.js';
@@ -32,6 +33,7 @@ Findings (exit 1), per serial:
   continued-after-fail     ran a later step while its latest result at this step was fail
   failed-after-later-step  latest result at this step is fail, after it had already passed a later step
   too-many-fails           more fails at one step than --max-fails (opt-in)
+  dwell-exceeded           took longer than a --max-dwell limit from one step to a later one (opt-in)
   incomplete               has not passed every required step (opt-in, --complete)
 and per step name: unknown-step (records at a step that is not on the route and not in --rework-steps).
 Routes per part only: unknown-part (per part: serials whose part has no route; not checked, not in yield or WIP)
@@ -50,10 +52,21 @@ Yield per station (opt-in, --station-column): per step, units, first pass, FPY, 
 station (machine). Each unit's first record at a step counts for the station it ran on; later records at the step
 are retests on whatever station they ran. Overall only (not per day / shift). Text, --json and --md only.
 
+Dwell limits (opt-in, --max-dwell, needs a timestamp column): per unit and step pair FROM>TO, dwell = time of the
+unit's first record at TO minus the time of its latest pass at FROM before that record (so repair and retests at
+FROM are not counted; a unit that goes back and reaches TO again is measured once). Over the limit (strictly) = a
+dwell-exceeded finding. Units that never reached TO, or reached it without a pass at FROM (already a skipped-step
+or out-of-order finding), are not measured. Also a table per pair: limit, units measured, exceeded, median, max.
+FROM must come before TO on the route (with routes per part: on every part route that has both steps, and on at
+least one).
+
 Options:
   --rework-steps <a,b>      off-route stations allowed anywhere (repair, debug, ...); not findings
   --max-fails <n>           flag a serial with more than n fails at one step
   --complete                every unit should be finished: flag units that have not passed every required step
+  --max-dwell <FROM>TO=T>   dwell limit between two route steps, e.g. FCT>PACK=2h; T in d / h / m / s
+                            (90s, 30m, 1h30m, 1.5h, 2d); repeatable or comma separated: SMT>AOI=30m,FCT>PACK=2h
+                            (quote the value in a shell: '>' is a redirect)
   --limit <n>               findings listed per kind in the text report (default 50)
   --serial-column <name>    events serial column (default serial)
   --step-column <name>      events step column (default step)
@@ -107,6 +120,7 @@ export function main(argv: string[]): number {
         'rework-steps': { type: 'string' },
         'max-fails': { type: 'string' },
         complete: { type: 'boolean' },
+        'max-dwell': { type: 'string', multiple: true },
         limit: { type: 'string' },
         'serial-column': { type: 'string' },
         'step-column': { type: 'string' },
@@ -167,6 +181,7 @@ export function main(argv: string[]): number {
       dayStart: values['day-start'],
       dayOffset: values['day-offset'],
       shifts: values.shifts,
+      ...(values['max-dwell'] !== undefined && { maxDwell: parseDwellLimits(values['max-dwell']) }),
     };
     const report = routes.parts ? checkParts(routes.parts, events, options) : check(routes.steps, events, options);
     const limit = int(values.limit, '--limit', 50, 1, 1_000_000)!;

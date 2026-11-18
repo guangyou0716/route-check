@@ -1,0 +1,161 @@
+{
+  "summary": {
+    "steps": 4,
+    "requiredSteps": 4,
+    "events": 62,
+    "serials": 12,
+    "finished": 12,
+    "wip": 0,
+    "finishedFirstPass": 6,
+    "rty": 0.5555555555555556,
+    "reworkEvents": 7,
+    "unknownEvents": 0,
+    "timeOrdered": true,
+    "hasResult": true
+  },
+  "yields": [
+    {
+      "step": "SMT",
+      "optional": false,
+      "units": 12,
+      "firstPass": 12,
+      "fpy": 1,
+      "passed": 12,
+      "records": 12,
+      "fails": 0
+    },
+    {
+      "step": "ICT",
+      "optional": false,
+      "units": 12,
+      "firstPass": 10,
+      "fpy": 0.8333333333333334,
+      "passed": 12,
+      "records": 14,
+      "fails": 2
+    },
+    {
+      "step": "FCT",
+      "optional": false,
+      "units": 12,
+      "firstPass": 8,
+      "fpy": 0.6666666666666666,
+      "passed": 12,
+      "records": 17,
+      "fails": 5
+    },
+    {
+      "step": "PACK",
+      "optional": false,
+      "units": 12,
+      "firstPass": 12,
+      "fpy": 1,
+      "passed": 12,
+      "records": 12,
+      "fails": 0
+    }
+  ],
+  "findings": [
+    {
+      "kind": "dwell-exceeded",
+      "serial": "PCB-102",
+      "step": "SMT",
+      "reachedStep": "PACK",
+      "rows": [
+        6,
+        11
+      ],
+      "dwellMs": 4260000,
+      "limitMs": 3000000,
+      "message": "PCB-102 reached PACK (row 11) 1h11m after passing SMT (row 6); limit 50m"
+    },
+    {
+      "kind": "dwell-exceeded",
+      "serial": "PCB-104",
+      "step": "SMT",
+      "reachedStep": "PACK",
+      "rows": [
+        16,
+        21
+      ],
+      "dwellMs": 4260000,
+      "limitMs": 3000000,
+      "message": "PCB-104 reached PACK (row 21) 1h11m after passing SMT (row 16); limit 50m"
+    },
+    {
+      "kind": "dwell-exceeded",
+      "serial": "PCB-106",
+      "step": "SMT",
+      "reachedStep": "PACK",
+      "rows": [
+        26,
+        31
+      ],
+      "dwellMs": 4260000,
+      "limitMs": 3000000,
+      "message": "PCB-106 reached PACK (row 31) 1h11m after passing SMT (row 26); limit 50m"
+    },
+    {
+      "kind": "dwell-exceeded",
+      "serial": "PCB-108",
+      "step": "SMT",
+      "reachedStep": "PACK",
+      "rows": [
+        36,
+        41
+      ],
+      "dwellMs": 4260000,
+      "limitMs": 3000000,
+      "message": "PCB-108 reached PACK (row 41) 1h11m after passing SMT (row 36); limit 50m"
+    },
+    {
+      "kind": "dwell-exceeded",
+      "serial": "PCB-109",
+      "step": "SMT",
+      "reachedStep": "PACK",
+      "rows": [
+        42,
+        48
+      ],
+      "dwellMs": 4260000,
+      "limitMs": 3000000,
+      "message": "PCB-109 reached PACK (row 48) 1h11m after passing SMT (row 42); limit 50m"
+    },
+    {
+      "kind": "dwell-exceeded",
+      "serial": "PCB-111",
+      "step": "SMT",
+      "reachedStep": "PACK",
+      "rows": [
+        52,
+        59
+      ],
+      "dwellMs": 6000000,
+      "limitMs": 3000000,
+      "message": "PCB-111 reached PACK (row 59) 1h40m after passing SMT (row 52); limit 50m"
+    }
+  ],
+  "counts": {
+    "dwell-exceeded": 6
+  },
+  "dwell": [
+    {
+      "from": "ICT",
+      "to": "FCT",
+      "limitMs": 1200000,
+      "units": 12,
+      "exceeded": 0,
+      "medianMs": 840000,
+      "maxMs": 840000
+    },
+    {
+      "from": "SMT",
+      "to": "PACK",
+      "limitMs": 3000000,
+      "units": 12,
+      "exceeded": 6,
+      "medianMs": 3390000,
+      "maxMs": 6000000
+    }
+  ]
+}
