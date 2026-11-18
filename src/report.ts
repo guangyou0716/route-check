@@ -1,4 +1,5 @@
-import { type FindingKind, KINDS, type Report, type Summary } from './route.js';
+import type { PeriodInfo, PeriodYield } from './periods.js';
+import { type FindingKind, KINDS, type Report, type StepYield, type Summary } from './route.js';
 
 export const TITLES: Record<FindingKind, string> = {
   'skipped-step': 'Skipped steps (a later step ran, this required step never passed)',
@@ -34,6 +35,40 @@ export function yieldRows(report: Pick<Report, 'yields'>): string[][] {
   ];
 }
 
+/** Name and explanation of the FPY-per-period table. */
+export function periodTitle(info: PeriodInfo): { name: string; detail: string } {
+  const at = info.offset ? ` at ${info.offset}` : '';
+  const shifts = (info.shifts ?? []).map((s) => `${s.name} ${s.start}-${s.end}`).join(', ');
+  const [name, head] =
+    info.by === 'day'
+      ? ['FPY by day', `day starts ${info.dayStart}${at}`]
+      : info.by === 'shift'
+        ? ['FPY by shift', `${shifts}${at}; each shift summed over every day`]
+        : ['FPY by day and shift', `${shifts}${at}; a shift counts on the day it starts`];
+  return { name, detail: `${head}; each unit's first record at a step counts in the period of its timestamp; cells: first pass / units and FPY` };
+}
+
+/** FPY-per-period table: one row per period, one column per route step, then RTY. */
+export function periodRows(info: PeriodInfo, periods: PeriodYield[], yields: StepYield[]): string[][] {
+  const first = info.by === 'day' ? 'Day' : info.by === 'shift' ? 'Shift' : 'Day / shift';
+  return [
+    [first, 'Units', ...yields.map((y) => (y.optional ? `${y.step} (optional)` : y.step)), 'RTY'],
+    ...periods.map((p) => [
+      p.period,
+      String(p.units),
+      ...p.steps.map((st) => (st.units ? `${st.firstPass}/${st.units} ${pct(st.fpy)}` : '-')),
+      pct(p.rty),
+    ]),
+  ];
+}
+
+function periodText(report: Report, periods: PeriodYield[] | undefined, yields: StepYield[], out: string[]): void {
+  if (!report.periodSettings || !periods) return;
+  const t = periodTitle(report.periodSettings);
+  out.push('', `${t.name} (${t.detail}):`);
+  out.push(periods.length ? pad(periodRows(report.periodSettings, periods, yields)) : 'No records at route steps.');
+}
+
 export function textReport(report: Report, limit: number): string {
   const s = report.summary;
   const out: string[] = [];
@@ -48,6 +83,7 @@ export function textReport(report: Report, limit: number): string {
         `${s.reworkEvents ? `, rework records: ${s.reworkEvents}` : ''}${s.unknownEvents ? `, records at steps not on the route: ${s.unknownEvents}` : ''}`,
     );
     out.push('', pad(yieldRows(report)));
+    periodText(report, report.periods, report.yields, out);
   }
   if (!report.findings.length) {
     out.push('', 'No findings.');
@@ -87,6 +123,7 @@ function partsText(report: Report, out: string[]): void {
       '',
       pad(yieldRows(p)),
     );
+    periodText(report, p.periods, p.yields, out);
   }
 }
 

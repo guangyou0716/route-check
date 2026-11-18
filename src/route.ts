@@ -1,5 +1,6 @@
 import { InputError } from './errors.js';
 import { type Event, type Events, type PartRoute, type Step, stepKey } from './input.js';
+import { type PeriodInfo, type Periods, type PeriodSettings, type PeriodYield, makePeriods } from './periods.js';
 
 export type FindingKind =
   | 'skipped-step'
@@ -101,6 +102,8 @@ export interface PartReport {
   part: string;
   summary: Summary;
   yields: StepYield[];
+  /** With byDay / shifts: this part's FPY per period. */
+  periods?: PeriodYield[];
 }
 
 export interface Report {
@@ -115,9 +118,16 @@ export interface Report {
   counts: Partial<Record<FindingKind, number>>;
   /** Routes per part only, in route-file order. */
   parts?: PartReport[];
+  /** With byDay / shifts only: how records were bucketed. */
+  periodSettings?: PeriodInfo;
+  /**
+   * With byDay / shifts only: FPY per period, in time order (per shift: shift order), periods without records left
+   * out. Empty with routes per part (see each part's `periods`).
+   */
+  periods?: PeriodYield[];
 }
 
-export interface CheckOptions {
+export interface CheckOptions extends PeriodSettings {
   /** Off-route stations that are allowed anywhere (repair, debug, ...). */
   reworkSteps?: string[];
   /** Flag units with more than this many fails at one step. */
@@ -130,15 +140,19 @@ interface UnitEvent {
   idx: number;
   pass: boolean;
   row: number;
+  time?: number;
 }
 
 const ROWS_SHOWN = 20;
 
 export function check(route: Step[], input: Events, options: CheckOptions = {}): Report {
-  return checkRoute(route, input, options);
+  const periods = makePeriods(options, input);
+  const report = checkRoute(route, input, options, undefined, periods);
+  if (periods) report.periodSettings = periods.info;
+  return report;
 }
 
-function checkRoute(route: Step[], input: Events, options: CheckOptions, part?: string): Report {
+function checkRoute(route: Step[], input: Events, options: CheckOptions, part?: string, periods?: Periods): Report {
   const index = new Map(route.map((s, i) => [stepKey(s.name), i]));
   const rework = new Set<string>();
   for (const r of options.reworkSteps ?? []) {
@@ -160,7 +174,7 @@ function checkRoute(route: Step[], input: Events, options: CheckOptions, part?: 
     const key = stepKey(e.step);
     const idx = index.get(key);
     if (idx !== undefined) {
-      list.push({ idx, pass: e.pass, row: e.row });
+      list.push({ idx, pass: e.pass, row: e.row, time: e.time });
     } else if (rework.has(key)) {
       reworkEvents++;
     } else {
@@ -195,12 +209,17 @@ function checkRoute(route: Step[], input: Events, options: CheckOptions, part?: 
   const missing: ({ reached: number; row: number } | undefined)[] = new Array(n).fill(undefined);
   const reportedFail: boolean[] = new Array(n).fill(false);
 
+  // FPY per period: each unit's first record at a step counts in the period of its timestamp.
+  const buckets = new Map<number, { label: ReturnType<Periods['bucket']>; units: number; firstPass: number[]; tried: number[] }>();
+  const unitBuckets = new Set<number>();
+
   for (const [serial, list] of units) {
     latest.fill(undefined);
     failCount.fill(0);
     missing.fill(undefined);
     reportedFail.fill(false);
     for (const r of failRows) r.length = 0;
+    unitBuckets.clear();
     let anyFail = false;
 
     for (const ev of list) {
@@ -227,6 +246,17 @@ function checkRoute(route: Step[], input: Events, options: CheckOptions, part?: 
       if (latest[k] === undefined) {
         y.units++;
         if (ev.pass) y.firstPass++;
+        if (periods) {
+          const label = periods.bucket(ev.time!);
+          let b = buckets.get(label.key);
+          if (!b) buckets.set(label.key, (b = { label, units: 0, firstPass: new Array(n).fill(0), tried: new Array(n).fill(0) }));
+          b.tried[k]++;
+          if (ev.pass) b.firstPass[k]++;
+          if (!unitBuckets.has(label.key)) {
+            unitBuckets.add(label.key);
+            b.units++;
+          }
+        }
       }
       y.records++;
       if (!ev.pass) {
@@ -331,7 +361,7 @@ function checkRoute(route: Step[], input: Events, options: CheckOptions, part?: 
   }
   const { ordered, counts } = byKind(findings);
 
-  return {
+  const report: Report = {
     summary: {
       steps: n,
       requiredSteps: required.filter(Boolean).length,
@@ -350,6 +380,28 @@ function checkRoute(route: Step[], input: Events, options: CheckOptions, part?: 
     findings: ordered,
     counts,
   };
+  if (periods) report.periods = periodYields(route, buckets);
+  return report;
+}
+
+/** Per-period step yields and RTY, periods in key order (time order; per shift: shift order). */
+function periodYields(
+  route: Step[],
+  buckets: Map<number, { label: ReturnType<Periods['bucket']>; units: number; firstPass: number[]; tried: number[] }>,
+): PeriodYield[] {
+  return [...buckets.entries()]
+    .sort((a, b) => a[0] - b[0])
+    .map(([, b]) => {
+      let rty: number | null = null;
+      const steps = route.map((s, k) => {
+        const fpy = b.tried[k] ? b.firstPass[k] / b.tried[k] : null;
+        if (!s.optional && fpy !== null) rty = (rty ?? 1) * fpy;
+        return { step: s.name, optional: s.optional, units: b.tried[k], firstPass: b.firstPass[k], fpy };
+      });
+      const { period, day, shift } = b.label;
+      const p: PeriodYield = { period, ...(day !== undefined && { day }), ...(shift !== undefined && { shift }), units: b.units, steps, rty };
+      return p;
+    });
 }
 
 /** Orders findings by kind (KINDS order), stable within a kind, and counts them. */
@@ -381,6 +433,7 @@ export function checkParts(parts: PartRoute[], input: Events, options: CheckOpti
     }
   }
 
+  const periods = makePeriods(options, input);
   const buckets = new Map<string, Event[]>(parts.map((p) => [stepKey(p.part), []]));
   const serialPart = new Map<string, string>();
   const conflicts = new Map<string, { parts: string[]; keys: Set<string>; rows: number[]; count: number }>();
@@ -414,8 +467,10 @@ export function checkParts(parts: PartRoute[], input: Events, options: CheckOpti
   const reports: PartReport[] = [];
   const findings: Finding[] = [];
   for (const p of parts) {
-    const r = checkRoute(p.steps, { ...input, events: buckets.get(stepKey(p.part))! }, options, p.part);
-    reports.push({ part: p.part, summary: r.summary, yields: r.yields });
+    const r = checkRoute(p.steps, { ...input, events: buckets.get(stepKey(p.part))! }, options, p.part, periods);
+    const pr: PartReport = { part: p.part, summary: r.summary, yields: r.yields };
+    if (periods) pr.periods = r.periods;
+    reports.push(pr);
     findings.push(...r.findings);
   }
   for (const u of unknown.values()) {
@@ -448,7 +503,7 @@ export function checkParts(parts: PartRoute[], input: Events, options: CheckOpti
     unknownPartEvents += u.count;
     unknownPartSerials += u.serials.size;
   }
-  return {
+  const report: Report = {
     summary: {
       steps: sum((s) => s.steps),
       requiredSteps: sum((s) => s.requiredSteps),
@@ -471,4 +526,9 @@ export function checkParts(parts: PartRoute[], input: Events, options: CheckOpti
     counts,
     parts: reports,
   };
+  if (periods) {
+    report.periodSettings = periods.info;
+    report.periods = [];
+  }
+  return report;
 }

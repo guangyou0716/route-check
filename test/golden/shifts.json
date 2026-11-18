@@ -1,0 +1,60 @@
+{
+  "summary": {
+    "steps": 4,
+    "requiredSteps": 4,
+    "events": 62,
+    "serials": 12,
+    "finished": 12,
+    "wip": 0,
+    "finishedFirstPass": 6,
+    "rty": 0.5555555555555556,
+    "reworkEvents": 7,
+    "unknownEvents": 0,
+    "timeOrdered": true,
+    "hasResult": true
+  },
+  "yields": [
+    {
+      "step": "SMT",
+      "optional": false,
+      "units": 12,
+      "firstPass": 12,
+      "fpy": 1,
+      "passed": 12,
+      "records": 12,
+      "fails": 0
+    },
+    {
+      "step": "ICT",
+      "optional": false,
+      "units": 12,
+      "firstPass": 10,
+      "fpy": 0.8333333333333334,
+      "passed": 12,
+      "records": 14,
+      "fails": 2
+    },
+    {
+      "step": "FCT",
+      "optional": false,
+      "units": 12,
+      "firstPass": 8,
+      "fpy": 0.6666666666666666,
+      "passed": 12,
+      "records": 17,
+      "fails": 5
+    },
+    {
+      "step": "PACK",
+      "optional": false,
+      "units": 12,
+      "firstPass": 12,
+      "fpy": 1,
+      "passed": 12,
+      "records": 12,
+      "fails": 0
+    }
+  ],
+  "findings": [],
+  "counts": {}
+}

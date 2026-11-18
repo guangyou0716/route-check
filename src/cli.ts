@@ -41,6 +41,11 @@ Yield: units at each step, first pass (first record at the step is a pass), FPY,
 pass, records, fails. RTY = product of FPY over required steps. Finished = latest record at the last required step
 is a pass; WIP = the rest.
 
+FPY per day / per shift (opt-in, needs a timestamp column): each unit's first record at a step counts in the day /
+shift of its timestamp (that record decides first pass). Per period: units, first pass and FPY per step, and RTY
+over required steps (per part with routes per part). Text, --json and --md only. A record exactly on a boundary
+belongs to the period that starts there.
+
 Options:
   --rework-steps <a,b>      off-route stations allowed anywhere (repair, debug, ...); not findings
   --max-fails <n>           flag a serial with more than n fails at one step
@@ -54,6 +59,13 @@ Options:
   --optional-column <name>  route optional column (default optional, optional)
   --route-part-column <n>   route part number column (default part, optional; turns on routes per part)
   --part-column <name>      events part number column (default part; needed with routes per part)
+  --by-day                  FPY per day (with --shifts: per day and shift; a shift counts on the day it starts,
+                            so a night shift's records after midnight count on the day before)
+  --day-start <HH:MM>       time of day a day starts for --by-day (default 00:00; e.g. 07:00); not with --shifts
+  --shifts <name=HH:MM,...> shift calendar, e.g. Day=07:00,Night=19:00: each shift lasts until the next starts;
+                            FPY per shift, each shift summed over every day (with --by-day: per day and shift)
+  --day-offset <+HH:MM>     zone offset for day and shift boundaries when the timestamps carry offsets
+                            (default the offset on the first row)
   --json                    JSON report (summary, per-step yield, every finding)
   --md                      Markdown report (summary, per-step yield table, findings; lists capped by --limit)
   --csv                     CSV, one row per finding (every finding, --limit ignored), columns
@@ -102,6 +114,10 @@ export function main(argv: string[]): number {
         json: { type: 'boolean' },
         md: { type: 'boolean' },
         csv: { type: 'boolean' },
+        'by-day': { type: 'boolean' },
+        'day-start': { type: 'string' },
+        'day-offset': { type: 'string' },
+        shifts: { type: 'string' },
         help: { type: 'boolean', short: 'h' },
       },
     });
@@ -110,6 +126,9 @@ export function main(argv: string[]): number {
       return 0;
     }
     if ([values.json, values.md, values.csv].filter(Boolean).length > 1) throw new InputError('pick one of --json, --md, --csv.');
+    if (values.csv && (values['by-day'] || values.shifts !== undefined)) {
+      throw new InputError('--csv lists findings only; for FPY per day / shift use the text report, --json or --md.');
+    }
     const [routeFile, eventsFile, ...rest] = positionals;
     if (routeFile === undefined) throw new InputError('missing the route CSV file; see --help.');
     if (eventsFile === undefined) throw new InputError('missing the events CSV file; see --help.');
@@ -134,6 +153,10 @@ export function main(argv: string[]): number {
       reworkSteps: listFlag(values['rework-steps']),
       maxFails: int(values['max-fails'], '--max-fails', undefined, 0, 1_000_000),
       complete: values.complete === true,
+      byDay: values['by-day'] === true,
+      dayStart: values['day-start'],
+      dayOffset: values['day-offset'],
+      shifts: values.shifts,
     };
     const report = routes.parts ? checkParts(routes.parts, events, options) : check(routes.steps, events, options);
     const limit = int(values.limit, '--limit', 50, 1, 1_000_000)!;

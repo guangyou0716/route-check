@@ -1,0 +1,42 @@
+route-check: 11 serials, 73 records, 2 part routes (15 steps, 14 required), replayed by timestamp
+Finished: 9 (first pass 7, 77.8%), WIP: 1, rework records: 3, serials of parts without a route: 1 (2 records)
+
+Part MTR-1P: 5 serials, 30 records, 6 route steps (6 required)
+Finished: 4 (first pass 3, 75.0%), WIP: 1, RTY: 60.0%
+
+Step   Units  First pass     FPY  Passed  Records  Fails
+SMT        5           5  100.0%       5        5      0
+AOI        5           5  100.0%       5        5      0
+ICT        5           4   80.0%       4        5      1
+FLASH      4           4  100.0%       4        4      0
+FCT        4           3   75.0%       4        5      1
+PACK       4           4  100.0%       4        4      0
+
+Part MTR-3P: 5 serials, 41 records, 9 route steps (8 required)
+Finished: 5 (first pass 4, 80.0%), WIP: 0, RTY: 80.0%
+
+Step               Units  First pass     FPY  Passed  Records  Fails
+SMT                    5           5  100.0%       5        5      0
+AOI                    5           5  100.0%       5        5      0
+ICT                    5           5  100.0%       5        5      0
+FLASH                  5           5  100.0%       5        5      0
+CALIB                  5           4   80.0%       5        6      1
+HIPOT                  4           4  100.0%       4        4      0
+BURNIN (optional)      0           0       -       0        0      0
+FCT                    5           5  100.0%       5        5      0
+PACK                   5           5  100.0%       5        5      0
+
+Findings: 5
+
+Skipped steps (a later step ran, this required step never passed): 1
+  - U3P-002 ran FCT (row 45) but never passed HIPOT (part MTR-3P)
+
+Incomplete units (--complete): 2
+  - U1P-005 has not passed ICT, FLASH, FCT, PACK (part MTR-1P)
+  - U3P-002 has not passed HIPOT (part MTR-3P)
+
+Parts without a route: 1
+  - part "GW-4G" has no route (1 serial, 2 rows, first row 73); add its steps to the route file
+
+Serials with records for more than one part: 1
+  - U3P-005 has records for part MTR-1P (1 row, first row 72) but its first record is part MTR-3P; checked as MTR-3P

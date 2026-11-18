@@ -1,0 +1,6 @@
+kind,part,serial,step,reached_step,count,serials,steps,rows,detail
+skipped-step,MTR-3P,U3P-002,HIPOT,FCT,,,,45,U3P-002 ran FCT (row 45) but never passed HIPOT (part MTR-3P)
+incomplete,MTR-1P,U1P-005,ICT,,,,ICT FLASH FCT PACK,,"U1P-005 has not passed ICT, FLASH, FCT, PACK (part MTR-1P)"
+incomplete,MTR-3P,U3P-002,HIPOT,,,,HIPOT,,U3P-002 has not passed HIPOT (part MTR-3P)
+unknown-part,GW-4G,,,,2,1,,73 74,"part ""GW-4G"" has no route (1 serial, 2 rows, first row 73); add its steps to the route file"
+part-conflict,MTR-3P,U3P-005,,,1,,,72,"U3P-005 has records for part MTR-1P (1 row, first row 72) but its first record is part MTR-3P; checked as MTR-3P"
