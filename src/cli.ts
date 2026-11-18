@@ -46,6 +46,10 @@ shift of its timestamp (that record decides first pass). Per period: units, firs
 over required steps (per part with routes per part). Text, --json and --md only. A record exactly on a boundary
 belongs to the period that starts there.
 
+Yield per station (opt-in, --station-column): per step, units, first pass, FPY, fails, retests and records per
+station (machine). Each unit's first record at a step counts for the station it ran on; later records at the step
+are retests on whatever station they ran. Overall only (not per day / shift). Text, --json and --md only.
+
 Options:
   --rework-steps <a,b>      off-route stations allowed anywhere (repair, debug, ...); not findings
   --max-fails <n>           flag a serial with more than n fails at one step
@@ -59,6 +63,7 @@ Options:
   --optional-column <name>  route optional column (default optional, optional)
   --route-part-column <n>   route part number column (default part, optional; turns on routes per part)
   --part-column <name>      events part number column (default part; needed with routes per part)
+  --station-column <name>   events station / machine column under a step (opt-in): yield per station
   --by-day                  FPY per day (with --shifts: per day and shift; a shift counts on the day it starts,
                             so a night shift's records after midnight count on the day before)
   --day-start <HH:MM>       time of day a day starts for --by-day (default 00:00; e.g. 07:00); not with --shifts
@@ -111,6 +116,7 @@ export function main(argv: string[]): number {
         'optional-column': { type: 'string' },
         'part-column': { type: 'string' },
         'route-part-column': { type: 'string' },
+        'station-column': { type: 'string' },
         json: { type: 'boolean' },
         md: { type: 'boolean' },
         csv: { type: 'boolean' },
@@ -128,6 +134,9 @@ export function main(argv: string[]): number {
     if ([values.json, values.md, values.csv].filter(Boolean).length > 1) throw new InputError('pick one of --json, --md, --csv.');
     if (values.csv && (values['by-day'] || values.shifts !== undefined)) {
       throw new InputError('--csv lists findings only; for FPY per day / shift use the text report, --json or --md.');
+    }
+    if (values.csv && values['station-column'] !== undefined) {
+      throw new InputError('--csv lists findings only; for yield per station use the text report, --json or --md.');
     }
     const [routeFile, eventsFile, ...rest] = positionals;
     if (routeFile === undefined) throw new InputError('missing the route CSV file; see --help.');
@@ -147,6 +156,7 @@ export function main(argv: string[]): number {
       resultColumn: values['result-column'],
       timeColumn: values['time-column'],
       partColumn: values['part-column'],
+      stationColumn: values['station-column'],
     });
     if (values['rework-steps'] !== undefined && !listFlag(values['rework-steps']).length) throw new InputError('--rework-steps is empty.');
     const options = {

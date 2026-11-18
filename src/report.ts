@@ -35,6 +35,48 @@ export function yieldRows(report: Pick<Report, 'yields'>): string[][] {
   ];
 }
 
+/** Station label in tables (an empty station cell is shown as "(none)"). */
+export const stationLabel = (station: string) => station || '(none)';
+
+/**
+ * Yield-per-station table (station column only): one row per station under each step, steps in route order.
+ * Returns undefined when no step has a station breakdown. Retests = records after each unit's first record.
+ */
+export function stationRows(yields: StepYield[]): string[][] | undefined {
+  if (!yields.some((y) => y.stations)) return undefined;
+  return [
+    ['Step', 'Station', 'Units', 'First pass', 'FPY', 'Fails', 'Retests', 'Records'],
+    ...yields.flatMap((y) =>
+      (y.stations ?? []).map((st) => [
+        y.optional ? `${y.step} (optional)` : y.step,
+        stationLabel(st.station),
+        String(st.units),
+        String(st.firstPass),
+        pct(st.fpy),
+        String(st.fails),
+        String(st.records - st.units),
+        String(st.records),
+      ]),
+    ),
+  ];
+}
+
+export const STATION_DETAIL =
+  "each unit's first record at a step counts for the station it ran on; retests = later records at the step";
+
+function stationText(yields: StepYield[], out: string[]): void {
+  const rows = stationRows(yields);
+  if (!rows) return;
+  out.push('', `Yield per station (${STATION_DETAIL}):`);
+  out.push(rows.length > 1 ? padLeft2(rows) : 'No records at route steps.');
+}
+
+/** Like pad, but the first two columns (step, station) are left-aligned. */
+function padLeft2(rows: string[][]): string {
+  const widths = rows[0].map((_, c) => Math.max(...rows.map((r) => r[c].length)));
+  return rows.map((r) => r.map((v, c) => (c < 2 ? v.padEnd(widths[c]) : v.padStart(widths[c]))).join('  ').trimEnd()).join('\n');
+}
+
 /** Name and explanation of the FPY-per-period table. */
 export function periodTitle(info: PeriodInfo): { name: string; detail: string } {
   const at = info.offset ? ` at ${info.offset}` : '';
@@ -83,6 +125,7 @@ export function textReport(report: Report, limit: number): string {
         `${s.reworkEvents ? `, rework records: ${s.reworkEvents}` : ''}${s.unknownEvents ? `, records at steps not on the route: ${s.unknownEvents}` : ''}`,
     );
     out.push('', pad(yieldRows(report)));
+    stationText(report.yields, out);
     periodText(report, report.periods, report.yields, out);
   }
   if (!report.findings.length) {
@@ -123,6 +166,7 @@ function partsText(report: Report, out: string[]): void {
       '',
       pad(yieldRows(p)),
     );
+    stationText(p.yields, out);
     periodText(report, p.periods, p.yields, out);
   }
 }

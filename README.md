@@ -48,7 +48,8 @@ timestamp,serial,step,result
   Z / +08:00 - all rows with a zone or all without) and records are replayed by time (equal times keep file
   order). Without it, file order is used.
 - Column names are configurable (`--serial-column`, `--step-column`, `--result-column`, `--time-column`,
-  `--route-step-column`, `--optional-column`). Step names match without regard to case.
+  `--route-step-column`, `--optional-column`). An optional station / machine column is read only with
+  `--station-column` (see [Yield per station](#yield-per-station)). Step names match without regard to case.
 - Off-route stations such as repair or debug go in `--rework-steps repair,debug`; their records are counted and
   otherwise ignored.
 
@@ -261,13 +262,65 @@ Day / shift       Units         SMT         ICT        FCT        PACK    RTY
 No findings.
 ```
 
+## Yield per station
+
+A step often runs on several machines (two ICT fixtures, four FCT testers). With a station / machine column in
+`events.csv`, `--station-column <name>` (opt-in; e.g. `--station-column station` or `--station-column machine`)
+adds a table per step and station: units, first pass, FPY, fails, retests and records.
+
+- Each unit's **first** record at a step counts for the station it ran on (that record decides first pass), so a
+  tester with false fails shows a low FPY even when the units pass the retest elsewhere. Later records at the step
+  are retests on whatever station they ran (a retest-only station has units 0 and FPY `-`). Per-station units,
+  first passes, records and fails add up to the per-step yield table.
+- Station names match without regard to case (first spelling kept) and are sorted by name; an empty station cell
+  is its own station, shown as `(none)` (`""` in JSON). Rework and unknown steps are not broken down.
+- With routes per part number there is one station table per part. The table is overall only (not per day / shift;
+  `--by-day` / `--shifts` tables are unchanged). Station tables raise no findings of their own.
+- Text, `--json` (`yields[].stations[]`: `station`, `units`, `firstPass`, `fpy`, `records`, `fails`; retests =
+  `records - units`) and `--md` (a section after the yield table). `--csv` stays one row per finding, so it cannot
+  be combined with the flag (exit 2). A missing column, or the serial / step column given as the station column, is
+  an input error (exit 2). Without the flag a station column is ignored and the output is byte-for-byte the same
+  as before.
+
+`examples/stations/` is made-up data: 12 boards, two ICT fixtures and two FCT testers. FCT-B fails 4 of its 6 first
+tests; three of those boards pass the retest on FCT-A, and BRD-210 goes on to PACK after its FCT-B fail.
+
+```sh
+node dist/cli.js examples/stations/route.csv examples/stations/events.csv --station-column station
+```
+
+```text
+route-check: 12 serials, 51 records, 4 route steps (4 required), replayed by timestamp
+Finished: 11 (first pass 6, 54.5%), WIP: 1, RTY: 61.1%
+
+Step  Units  First pass     FPY  Passed  Records  Fails
+SMT      12          12  100.0%      12       12      0
+ICT      12          11   91.7%      12       13      1
+FCT      12           8   66.7%      11       15      4
+PACK     11          11  100.0%      11       11      0
+
+Yield per station (each unit's first record at a step counts for the station it ran on; retests = later records at the step):
+Step  Station  Units  First pass     FPY  Fails  Retests  Records
+SMT   SMT-L1      12          12  100.0%      0        0       12
+ICT   ICT-1        6           6  100.0%      0        1        7
+ICT   ICT-2        6           5   83.3%      1        0        6
+FCT   FCT-A        6           6  100.0%      0        3        9
+FCT   FCT-B        6           2   33.3%      4        0        6
+PACK  PACK-1      11          11  100.0%      0        0       11
+
+Findings: 1
+
+Continued after fail (a later step ran while the latest result here was fail): 1
+  - BRD-210 failed FCT (row 43) and ran PACK (row 49) without passing FCT again
+```
+
 ## Output formats
 
 `--json`, `--md` or `--csv`, one at a time (more than one is an input error, exit 2). Exit codes are the same for
 every format.
 
 - `--json`: summary, per-step yield and every finding with its rows (plus `periodSettings` / `periods` with
-  `--by-day` / `--shifts`).
+  `--by-day` / `--shifts`, and `yields[].stations` with `--station-column`).
 - `--md`: Markdown for a ticket or wiki page - summary table (serials, records, steps, finished, finished first
   pass, WIP, RTY), per-step yield table (units, first pass, FPY, passed (final), fails, retests, records; retests =
   records after each unit's first record at the step), finding counts per kind and the findings per kind (capped by
@@ -302,6 +355,8 @@ const routes = parseRoutes(routeCsv); // routes.parts is set when the file has a
 const byPart = routes.parts ? checkParts(routes.parts, parseEvents(eventsCsv)) : check(routes.steps, parseEvents(eventsCsv));
 // FPY per day and shift (needs timestamps): report.periodSettings, report.periods (per part: parts[i].periods)
 const daily = check(parseRoute(routeCsv), parseEvents(eventsCsv), { byDay: true, shifts: 'Day=07:00,Night=19:00' });
+// Yield per station: report.yields[i].stations
+const perStation = check(parseRoute(routeCsv), parseEvents(eventsCsv, { stationColumn: 'machine' }));
 ```
 
 ## Development
@@ -313,4 +368,4 @@ npm run build && npm run smoke   # built CLI end to end, incl. 100,000 units / ~
 
 ## Not yet
 
-A station (machine) column under a step, dwell-time limits between steps.
+Dwell-time limits between steps.

@@ -1,5 +1,5 @@
 import type { PeriodYield } from './periods.js';
-import { pct, periodRows, periodTitle, TITLES } from './report.js';
+import { pct, periodRows, periodTitle, STATION_DETAIL, stationRows, TITLES } from './report.js';
 import { type Finding, KINDS, type Report, type StepYield, type Summary } from './route.js';
 
 /**
@@ -51,6 +51,21 @@ function mdYield(yields: StepYield[]): string[] {
   ];
 }
 
+/** Yield-per-station section (station column only); `level` is the heading prefix. */
+function mdStations(yields: StepYield[], level: string): string[] {
+  const rows = stationRows(yields);
+  if (!rows) return [];
+  const out = ['', `${level} Yield per station`, '', `${mdCell(STATION_DETAIL[0].toUpperCase() + STATION_DETAIL.slice(1))}.`, ''];
+  if (rows.length === 1) return [...out, 'No records at route steps.'];
+  const [head, ...body] = rows;
+  return [
+    ...out,
+    `| ${head.map((h) => mdCell(h.toLowerCase())).join(' | ')} |`,
+    `| --- | --- | ${head.slice(2).map(() => '---:').join(' | ')} |`,
+    ...body.map((r) => `| ${r.map(mdCell).join(' | ')} |`),
+  ];
+}
+
 /** FPY-per-period section (byDay / shifts only); `level` is the heading prefix. */
 function mdPeriods(report: Report, periods: PeriodYield[] | undefined, yields: StepYield[], level: string): string[] {
   const info = report.periodSettings;
@@ -83,6 +98,7 @@ function mdSingle(report: Report): string[] {
     '## Yield per step',
     '',
     ...mdYield(report.yields),
+    ...mdStations(report.yields, '##'),
     ...mdPeriods(report, report.periods, report.yields, '##'),
   ];
 }
@@ -112,6 +128,7 @@ function mdParts(report: Report): string[] {
       `| ${ps.serials} | ${ps.events} | ${ps.steps} | ${ps.requiredSteps} | ${ps.finished} | ${ffp(ps)} | ${ps.wip} | ${pct(ps.rty)} |`,
       '',
       ...mdYield(p.yields),
+      ...mdStations(p.yields, '###'),
       ...mdPeriods(report, p.periods, p.yields, '###'),
     );
   }

@@ -43,6 +43,7 @@ console.log('smoke: ok parts example: 2 part routes, 11 serials, 9 finished, 3 f
 
 // 100,000 units x 7 steps, timestamped; every 50th unit fails FCT once and is retested after REPAIR;
 // unit 777 skips AOI, unit 1234 goes on to PACK after an FCT fail. File order reversed (replayed by time).
+// Station column: unit i runs every step on station <step>-<i % 4> (ignored unless --station-column).
 const steps = ['SMT', 'AOI', 'ICT', 'FLASH', 'CALIB', 'FCT', 'PACK'];
 writeFileSync(join(dir, 'route.csv'), 'step\n' + steps.join('\n') + '\n');
 const stamp = (min) => new Date(Date.UTC(2026, 10, 1) + min * 60_000).toISOString().replace('T', ' ').slice(0, 19);
@@ -53,15 +54,15 @@ for (let i = 0; i < 100_000; i++) {
   for (const st of steps) {
     if (i === 777 && st === 'AOI') continue;
     if (st === 'FCT' && (i % 50 === 0 || i === 1234)) {
-      rows.push(`${s},${st},fail,${stamp(t++)}`);
+      rows.push(`${s},${st},fail,${stamp(t++)},${st}-${i % 4}`);
       if (i === 1234) continue;
-      rows.push(`${s},REPAIR,pass,${stamp(t++)}`);
+      rows.push(`${s},REPAIR,pass,${stamp(t++)},R-1`);
     }
-    rows.push(`${s},${st},pass,${stamp(t++)}`);
+    rows.push(`${s},${st},pass,${stamp(t++)},${st}-${i % 4}`);
   }
 }
 rows.reverse();
-writeFileSync(join(dir, 'events.csv'), 'serial,step,result,timestamp\n' + rows.join('\n') + '\n');
+writeFileSync(join(dir, 'events.csv'), 'serial,step,result,timestamp,station\n' + rows.join('\n') + '\n');
 const t0 = Date.now();
 const big = run(cli, [join(dir, 'route.csv'), join(dir, 'events.csv'), '--rework-steps', 'REPAIR', '--json']);
 const bd = big.stdout ? JSON.parse(big.stdout) : {};
@@ -99,3 +100,22 @@ if (
   fail(`periods: status ${per.status} ${JSON.stringify(pdd.periodSettings)} ${pdd.periods?.length} ${per.stderr}`);
 }
 console.log(`smoke: ok --by-day --shifts on the large log in ${ms1} ms: ${pdd.periods.length} day/shift periods, FCT first records add up`);
+
+// Yield per station on the same large log: station counts add up to the step; findings unchanged.
+const t2 = Date.now();
+const stn = run(cli, [join(dir, 'route.csv'), join(dir, 'events.csv'), '--rework-steps', 'REPAIR', '--json', '--station-column', 'station']);
+const sd = stn.stdout ? JSON.parse(stn.stdout) : {};
+const ms2 = Date.now() - t2;
+const fs = sd.yields?.find((y) => y.step === 'FCT')?.stations ?? [];
+const fails = Object.fromEntries(fs.map((x) => [x.station, x.fails]));
+if (
+  stn.status !== 1 ||
+  fs.length !== 4 ||
+  fs.reduce((a, x) => a + x.units, 0) !== 100_000 ||
+  fs.reduce((a, x) => a + x.firstPass, 0) !== 100_000 - 2001 ||
+  JSON.stringify(fails) !== JSON.stringify({ 'FCT-0': 1000, 'FCT-1': 0, 'FCT-2': 1001, 'FCT-3': 0 }) ||
+  JSON.stringify(sd.counts) !== JSON.stringify(bd.counts)
+) {
+  fail(`stations: status ${stn.status} ${JSON.stringify(fs)} ${stn.stderr}`);
+}
+console.log(`smoke: ok --station-column on the large log in ${ms2} ms: 4 FCT stations, counts add up, FCT-0 / FCT-2 hold the fails`);

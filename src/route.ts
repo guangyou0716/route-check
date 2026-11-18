@@ -72,6 +72,26 @@ export interface StepYield {
   /** Records at the step (tests incl. retests). */
   records: number;
   fails: number;
+  /**
+   * With a station column only: the step's records per station (machine), sorted by station name (an empty station
+   * cell is station ""). Each unit's first record at the step counts for the station it ran on, so units, firstPass,
+   * records and fails sum to the step's values; retests at a station = records - units.
+   */
+  stations?: StationYield[];
+}
+
+/** One station (machine) under a route step. */
+export interface StationYield {
+  station: string;
+  /** Units whose first record at the step ran on this station. */
+  units: number;
+  /** Of those, units whose first record is a pass. */
+  firstPass: number;
+  /** firstPass / units (null when no unit had its first record here, e.g. a retest-only station). */
+  fpy: number | null;
+  /** Records at the step on this station (first records and retests). */
+  records: number;
+  fails: number;
 }
 
 export interface Summary {
@@ -141,6 +161,7 @@ interface UnitEvent {
   pass: boolean;
   row: number;
   time?: number;
+  station?: string;
 }
 
 const ROWS_SHOWN = 20;
@@ -174,7 +195,7 @@ function checkRoute(route: Step[], input: Events, options: CheckOptions, part?: 
     const key = stepKey(e.step);
     const idx = index.get(key);
     if (idx !== undefined) {
-      list.push({ idx, pass: e.pass, row: e.row, time: e.time });
+      list.push({ idx, pass: e.pass, row: e.row, time: e.time, station: e.station });
     } else if (rework.has(key)) {
       reworkEvents++;
     } else {
@@ -197,6 +218,9 @@ function checkRoute(route: Step[], input: Events, options: CheckOptions, part?: 
     records: 0,
     fails: 0,
   }));
+  // Yield per station (station column only): per step, station key -> counts (first spelling kept).
+  const stations = input.hasStation ? Array.from({ length: n }, () => new Map<string, StationYield>()) : undefined;
+
   const findings: Finding[] = [];
   let finished = 0;
   let finishedFirstPass = 0;
@@ -243,9 +267,22 @@ function checkRoute(route: Step[], input: Events, options: CheckOptions, part?: 
         }
       }
       const y = yields[k];
+      let sy: StationYield | undefined;
+      if (stations) {
+        const name = ev.station ?? '';
+        const key = stepKey(name);
+        sy = stations[k].get(key);
+        if (!sy) stations[k].set(key, (sy = { station: name, units: 0, firstPass: 0, fpy: null, records: 0, fails: 0 }));
+        sy.records++;
+        if (!ev.pass) sy.fails++;
+      }
       if (latest[k] === undefined) {
         y.units++;
         if (ev.pass) y.firstPass++;
+        if (sy) {
+          sy.units++;
+          if (ev.pass) sy.firstPass++;
+        }
         if (periods) {
           const label = periods.bucket(ev.time!);
           let b = buckets.get(label.key);
@@ -348,6 +385,13 @@ function checkRoute(route: Step[], input: Events, options: CheckOptions, part?: 
   for (const y of yields) {
     y.fpy = y.units ? y.firstPass / y.units : null;
     if (!y.optional && y.fpy !== null) rty = (rty ?? 1) * y.fpy;
+  }
+  if (stations) {
+    yields.forEach((y, k) => {
+      y.stations = [...stations[k].entries()]
+        .sort((a, b) => (a[0] === '' ? 1 : 0) - (b[0] === '' ? 1 : 0) || (a[0] < b[0] ? -1 : a[0] > b[0] ? 1 : 0))
+        .map(([, st]) => ({ ...st, fpy: st.units ? st.firstPass / st.units : null }));
+    });
   }
 
   if (part !== undefined) {

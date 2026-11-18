@@ -1,0 +1,130 @@
+{
+  "summary": {
+    "steps": 4,
+    "requiredSteps": 4,
+    "events": 51,
+    "serials": 12,
+    "finished": 11,
+    "wip": 1,
+    "finishedFirstPass": 6,
+    "rty": 0.611111111111111,
+    "reworkEvents": 0,
+    "unknownEvents": 0,
+    "timeOrdered": true,
+    "hasResult": true
+  },
+  "yields": [
+    {
+      "step": "SMT",
+      "optional": false,
+      "units": 12,
+      "firstPass": 12,
+      "fpy": 1,
+      "passed": 12,
+      "records": 12,
+      "fails": 0,
+      "stations": [
+        {
+          "station": "SMT-L1",
+          "units": 12,
+          "firstPass": 12,
+          "fpy": 1,
+          "records": 12,
+          "fails": 0
+        }
+      ]
+    },
+    {
+      "step": "ICT",
+      "optional": false,
+      "units": 12,
+      "firstPass": 11,
+      "fpy": 0.9166666666666666,
+      "passed": 12,
+      "records": 13,
+      "fails": 1,
+      "stations": [
+        {
+          "station": "ICT-1",
+          "units": 6,
+          "firstPass": 6,
+          "fpy": 1,
+          "records": 7,
+          "fails": 0
+        },
+        {
+          "station": "ICT-2",
+          "units": 6,
+          "firstPass": 5,
+          "fpy": 0.8333333333333334,
+          "records": 6,
+          "fails": 1
+        }
+      ]
+    },
+    {
+      "step": "FCT",
+      "optional": false,
+      "units": 12,
+      "firstPass": 8,
+      "fpy": 0.6666666666666666,
+      "passed": 11,
+      "records": 15,
+      "fails": 4,
+      "stations": [
+        {
+          "station": "FCT-A",
+          "units": 6,
+          "firstPass": 6,
+          "fpy": 1,
+          "records": 9,
+          "fails": 0
+        },
+        {
+          "station": "FCT-B",
+          "units": 6,
+          "firstPass": 2,
+          "fpy": 0.3333333333333333,
+          "records": 6,
+          "fails": 4
+        }
+      ]
+    },
+    {
+      "step": "PACK",
+      "optional": false,
+      "units": 11,
+      "firstPass": 11,
+      "fpy": 1,
+      "passed": 11,
+      "records": 11,
+      "fails": 0,
+      "stations": [
+        {
+          "station": "PACK-1",
+          "units": 11,
+          "firstPass": 11,
+          "fpy": 1,
+          "records": 11,
+          "fails": 0
+        }
+      ]
+    }
+  ],
+  "findings": [
+    {
+      "kind": "continued-after-fail",
+      "serial": "BRD-210",
+      "step": "FCT",
+      "reachedStep": "PACK",
+      "rows": [
+        43,
+        49
+      ],
+      "message": "BRD-210 failed FCT (row 43) and ran PACK (row 49) without passing FCT again"
+    }
+  ],
+  "counts": {
+    "continued-after-fail": 1
+  }
+}
