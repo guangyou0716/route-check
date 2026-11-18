@@ -92,3 +92,39 @@ describe('cli', () => {
     expect(r.err).toContain(msg);
   });
 });
+
+describe('cli output formats', () => {
+  it('--md: same findings and exit code as text', () => {
+    const r = run([...base, '--md']);
+    expect(r.code).toBe(1);
+    expect(r.out).toContain('# Route check');
+    expect(r.out).toContain('| FCT | 9 | 6 | 66.7% | 7 | 6 | 5 | 14 |');
+    expect(r.out).toContain('| 10 | 80 | 8 | 7 | 9 | 4 (44.4%) | 1 | 59.3% |');
+    expect(r.out).toContain('## Findings: 5');
+  });
+  it('--md honours --limit', () => {
+    const r = run([...base, '--complete', '--md', '--limit', '1']);
+    expect(r.out).toContain('- ... 3 more (use --json or --csv for all, or a higher --limit)');
+  });
+  it('--csv: every finding, --limit ignored', () => {
+    const r = run([...base, '--complete', '--max-fails', '2', '--csv', '--limit', '1']);
+    expect(r.code).toBe(1);
+    const lines = r.out.trimEnd().split('\n');
+    expect(lines[0]).toBe('kind,serial,step,reached_step,count,serials,steps,rows,detail');
+    expect(lines).toHaveLength(11);
+    expect(lines).toContain('too-many-fails,MTR-0010,FCT,,3,,,70 75 78,MTR-0010 failed FCT 3 times (limit 2)');
+  });
+  it('--csv with no findings: header only, exit 0', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'route-check-test-'));
+    writeFileSync(join(dir, 'events.csv'), 'serial,step\nU1,SMT\n');
+    const r = run([ex('route.csv'), join(dir, 'events.csv'), '--csv']);
+    expect(r.code).toBe(0);
+    expect(r.out).toBe('kind,serial,step,reached_step,count,serials,steps,rows,detail\n');
+  });
+  it.each([['--json', '--md'], ['--json', '--csv'], ['--md', '--csv']])('%s %s: input error, exit 2', (a, b) => {
+    const r = run([...base, a, b]);
+    expect(r.code).toBe(2);
+    expect(r.out).toBe('');
+    expect(r.err).toContain('pick one of --json, --md, --csv');
+  });
+});

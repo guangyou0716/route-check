@@ -1,6 +1,6 @@
 import { type FindingKind, KINDS, type Report } from './route.js';
 
-const TITLES: Record<FindingKind, string> = {
+export const TITLES: Record<FindingKind, string> = {
   'skipped-step': 'Skipped steps (a later step ran, this required step never passed)',
   'out-of-order': 'Out of order (a later step ran before this step was passed)',
   'continued-after-fail': 'Continued after fail (a later step ran while the latest result here was fail)',

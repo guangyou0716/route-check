@@ -3,6 +3,7 @@ import { readFileSync, realpathSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { parseArgs } from 'node:util';
 import { InputError } from './errors.js';
+import { csvReport, mdReport } from './formats.js';
 import { listFlag, parseEvents, parseRoute } from './input.js';
 import { jsonReport, textReport } from './report.js';
 import { check } from './route.js';
@@ -45,6 +46,10 @@ Options:
   --route-step-column <n>   route step column (default step)
   --optional-column <name>  route optional column (default optional, optional)
   --json                    JSON report (summary, per-step yield, every finding)
+  --md                      Markdown report (summary, per-step yield table, findings; lists capped by --limit)
+  --csv                     CSV, one row per finding (every finding, --limit ignored), columns
+                            kind,serial,step,reached_step,count,serials,steps,rows,detail
+                            (pick one of --json, --md, --csv)
   -h, --help                show this help
 
 Exit codes: 0 no findings, 1 findings, 2 input error.
@@ -83,6 +88,8 @@ export function main(argv: string[]): number {
         'route-step-column': { type: 'string' },
         'optional-column': { type: 'string' },
         json: { type: 'boolean' },
+        md: { type: 'boolean' },
+        csv: { type: 'boolean' },
         help: { type: 'boolean', short: 'h' },
       },
     });
@@ -90,6 +97,7 @@ export function main(argv: string[]): number {
       process.stdout.write(USAGE);
       return 0;
     }
+    if ([values.json, values.md, values.csv].filter(Boolean).length > 1) throw new InputError('pick one of --json, --md, --csv.');
     const [routeFile, eventsFile, ...rest] = positionals;
     if (routeFile === undefined) throw new InputError('missing the route CSV file; see --help.');
     if (eventsFile === undefined) throw new InputError('missing the events CSV file; see --help.');
@@ -111,7 +119,9 @@ export function main(argv: string[]): number {
       complete: values.complete === true,
     });
     const limit = int(values.limit, '--limit', 50, 1, 1_000_000)!;
-    process.stdout.write(values.json ? jsonReport(report) : textReport(report, limit));
+    process.stdout.write(
+      values.json ? jsonReport(report) : values.md ? mdReport(report, limit) : values.csv ? csvReport(report) : textReport(report, limit),
+    );
     return report.findings.length ? 1 : 0;
   } catch (e) {
     if (e instanceof InputError || (e as { code?: string }).code?.startsWith('ERR_PARSE_ARGS')) {
