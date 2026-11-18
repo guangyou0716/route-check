@@ -66,6 +66,8 @@ fail); only reaching a **later** step matters.
 | `too-many-fails` | More fails at one step than `--max-fails n` (opt-in) |
 | `incomplete` | Has not passed every required step (opt-in, `--complete`, for a lot that should be finished) |
 | `unknown-step` | Records at a step that is not on the route and not in `--rework-steps` (one finding per step name) |
+| `unknown-part` | Routes per part only: serials whose part has no route (one finding per part) |
+| `part-conflict` | Routes per part only: a serial with records naming more than one part (one finding per serial) |
 
 Each kind is reported at most once per serial and step. A fail with no later record is work in progress, not a
 finding. Optional steps may be skipped, but a fail at an
@@ -118,6 +120,93 @@ Steps not on the route: 1
 Row numbers are CSV record numbers in the events file (header = 1). `--limit n` caps findings per kind in the text
 and Markdown reports (default 50).
 
+## Routes per part number
+
+When a line builds several products, give `route.csv` a `part` column - one route per part number, a part's rows
+in route order (parts may be interleaved) - and give `events.csv` a `part` column too (every row needs one):
+
+```csv
+part,step,optional
+MTR-1P,SMT,
+MTR-1P,AOI,
+MTR-1P,ICT,
+MTR-1P,FLASH,
+MTR-1P,FCT,
+MTR-1P,PACK,
+MTR-3P,SMT,
+...
+MTR-3P,HIPOT,
+MTR-3P,BURNIN,y
+MTR-3P,FCT,
+MTR-3P,PACK,
+```
+
+```csv
+timestamp,serial,part,step,result
+2026-11-11 08:01:00,U1P-001,MTR-1P,SMT,pass
+```
+
+- Each serial is checked against the route of the part on its **first** record (in replay order) - the part a unit
+  is launched as. Part numbers match without regard to case.
+- `part-conflict` (one per serial): the serial has records naming another part. It is still checked as its first
+  part; the finding lists the other parts, the number of such rows and the first rows.
+- `unknown-part` (one per part): serials whose part has no route in `route.csv`. They are not checked and are left
+  out of yield, finished and WIP (counted separately as "serials of parts without a route").
+- Yield (per-step FPY, RTY, finished / WIP) is reported **per part**; the top line gives totals (no overall RTY -
+  RTY only makes sense per route). `unknown-step` is per part ("not on the route of part ...").
+- `--rework-steps` apply to every part and must not be a step on any part's route.
+- `--route-part-column` / `--part-column` rename the columns (default `part`). Without a part column in `route.csv`
+  everything works as before - one route for every serial, a part column in `events.csv` is ignored, and the output
+  is byte-for-byte the same.
+- `--json` gains `parts` (per part: `part`, `summary`, `yields`), top-level `yields` is empty and `summary` holds
+  totals plus `parts`, `unknownPartSerials`, `unknownPartEvents`; findings carry `part` (and `parts` for
+  part-conflict). `--md` has a section per part. `--csv` gains a `part` column after `kind`.
+
+```sh
+node dist/cli.js examples/parts/route.csv examples/parts/events.csv --rework-steps repair
+```
+
+```text
+route-check: 11 serials, 73 records, 2 part routes (15 steps, 14 required), replayed by timestamp
+Finished: 9 (first pass 7, 77.8%), WIP: 1, rework records: 3, serials of parts without a route: 1 (2 records)
+
+Part MTR-1P: 5 serials, 30 records, 6 route steps (6 required)
+Finished: 4 (first pass 3, 75.0%), WIP: 1, RTY: 60.0%
+
+Step   Units  First pass     FPY  Passed  Records  Fails
+SMT        5           5  100.0%       5        5      0
+AOI        5           5  100.0%       5        5      0
+ICT        5           4   80.0%       4        5      1
+FLASH      4           4  100.0%       4        4      0
+FCT        4           3   75.0%       4        5      1
+PACK       4           4  100.0%       4        4      0
+
+Part MTR-3P: 5 serials, 41 records, 9 route steps (8 required)
+Finished: 5 (first pass 4, 80.0%), WIP: 0, RTY: 80.0%
+
+Step               Units  First pass     FPY  Passed  Records  Fails
+SMT                    5           5  100.0%       5        5      0
+AOI                    5           5  100.0%       5        5      0
+ICT                    5           5  100.0%       5        5      0
+FLASH                  5           5  100.0%       5        5      0
+CALIB                  5           4   80.0%       5        6      1
+HIPOT                  4           4  100.0%       4        4      0
+BURNIN (optional)      0           0       -       0        0      0
+FCT                    5           5  100.0%       5        5      0
+PACK                   5           5  100.0%       5        5      0
+
+Findings: 3
+
+Skipped steps (a later step ran, this required step never passed): 1
+  - U3P-002 ran FCT (row 45) but never passed HIPOT (part MTR-3P)
+
+Parts without a route: 1
+  - part "GW-4G" has no route (1 serial, 2 rows, first row 73); add its steps to the route file
+
+Serials with records for more than one part: 1
+  - U3P-005 has records for part MTR-1P (1 row, first row 72) but its first record is part MTR-3P; checked as MTR-3P
+```
+
 ## Output formats
 
 `--json`, `--md` or `--csv`, one at a time (more than one is an input error, exit 2). Exit codes are the same for
@@ -151,8 +240,11 @@ Exit codes: 0 no findings, 1 findings, 2 input error.
 ## Library
 
 ```ts
-import { check, parseEvents, parseRoute } from './dist/index.js';
+import { check, checkParts, parseEvents, parseRoute, parseRoutes } from './dist/index.js';
 const report = check(parseRoute(routeCsv), parseEvents(eventsCsv), { reworkSteps: ['REPAIR'], maxFails: 3 });
+// Routes per part number:
+const routes = parseRoutes(routeCsv); // routes.parts is set when the file has a part column
+const byPart = routes.parts ? checkParts(routes.parts, parseEvents(eventsCsv)) : check(routes.steps, parseEvents(eventsCsv));
 ```
 
 ## Development
@@ -164,5 +256,4 @@ npm run build && npm run smoke   # built CLI end to end, incl. 100,000 units / ~
 
 ## Not yet
 
-Several routes by part number, FPY per day or shift, a station (machine) column under a
-step, dwell-time limits between steps.
+FPY per day or shift, a station (machine) column under a step, dwell-time limits between steps.

@@ -1,0 +1,11 @@
+kind,serial,step,reached_step,count,serials,steps,rows,detail
+skipped-step,MTR-0003,AOI,ICT,,,,10,MTR-0003 ran ICT (row 10) but never passed AOI
+out-of-order,MTR-0005,FLASH,CALIB,,,,33,"MTR-0005 ran CALIB (row 33) before passing FLASH (passed later, row 38)"
+continued-after-fail,MTR-0004,FCT,PACK,,,,37 43,MTR-0004 failed FCT (row 37) and ran PACK (row 43) without passing FCT again
+failed-after-later-step,MTR-0007,FCT,PACK,,,,64 60,MTR-0007 passed PACK (row 60) but its latest result at FCT is fail (row 64)
+too-many-fails,MTR-0010,FCT,,3,,,70 75 78,MTR-0010 failed FCT 3 times (limit 2)
+incomplete,MTR-0003,AOI,,,,AOI,,MTR-0003 has not passed AOI
+incomplete,MTR-0004,FCT,,,,FCT,,MTR-0004 has not passed FCT
+incomplete,MTR-0006,ICT,,,,ICT FLASH CALIB FCT PACK,,"MTR-0006 has not passed ICT, FLASH, CALIB, FCT, PACK"
+incomplete,MTR-0007,FCT,,,,FCT,,MTR-0007 has not passed FCT
+unknown-step,,XRAY,,1,1,,48,"step ""XRAY"" is not on the route (1 row, 1 serial, first row 48); add it to the route or to --rework-steps"

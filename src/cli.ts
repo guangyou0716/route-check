@@ -4,9 +4,9 @@ import { fileURLToPath } from 'node:url';
 import { parseArgs } from 'node:util';
 import { InputError } from './errors.js';
 import { csvReport, mdReport } from './formats.js';
-import { listFlag, parseEvents, parseRoute } from './input.js';
+import { listFlag, parseEvents, parseRoutes } from './input.js';
 import { jsonReport, textReport } from './report.js';
-import { check } from './route.js';
+import { check, checkParts } from './route.js';
 
 const USAGE = `Usage: route-check <route.csv> <events.csv> [options]
 
@@ -21,6 +21,11 @@ events.csv: header "serial,step" plus optional "result" (pass / fail; pass, ok, 
             replayed by time (equal times keep file order); otherwise file order is used.
 Step names match without regard to case. A unit may go back to an earlier step (e.g. re-flash after a test fail).
 
+Routes per part number: give route.csv a "part" column (one route per part; a part's rows keep file order) and
+events.csv a "part" column (every row needs one). Each serial is checked against the route of the part on its
+first record; yield, RTY and finished / WIP are reported per part. Without a part column in route.csv there is
+one route for every serial (a part column in events.csv is then ignored).
+
 Findings (exit 1), per serial:
   skipped-step             reached a later step, never passed this required step
   out-of-order             reached a later step before passing this required step (passed it afterwards)
@@ -29,6 +34,8 @@ Findings (exit 1), per serial:
   too-many-fails           more fails at one step than --max-fails (opt-in)
   incomplete               has not passed every required step (opt-in, --complete)
 and per step name: unknown-step (records at a step that is not on the route and not in --rework-steps).
+Routes per part only: unknown-part (per part: serials whose part has no route; not checked, not in yield or WIP)
+and part-conflict (per serial: records naming another part than its first record; checked as its first part).
 
 Yield: units at each step, first pass (first record at the step is a pass), FPY, units whose latest record is a
 pass, records, fails. RTY = product of FPY over required steps. Finished = latest record at the last required step
@@ -45,10 +52,13 @@ Options:
   --time-column <name>      events timestamp column (default timestamp, optional)
   --route-step-column <n>   route step column (default step)
   --optional-column <name>  route optional column (default optional, optional)
+  --route-part-column <n>   route part number column (default part, optional; turns on routes per part)
+  --part-column <name>      events part number column (default part; needed with routes per part)
   --json                    JSON report (summary, per-step yield, every finding)
   --md                      Markdown report (summary, per-step yield table, findings; lists capped by --limit)
   --csv                     CSV, one row per finding (every finding, --limit ignored), columns
                             kind,serial,step,reached_step,count,serials,steps,rows,detail
+                            (routes per part: a part column after kind)
                             (pick one of --json, --md, --csv)
   -h, --help                show this help
 
@@ -87,6 +97,8 @@ export function main(argv: string[]): number {
         'time-column': { type: 'string' },
         'route-step-column': { type: 'string' },
         'optional-column': { type: 'string' },
+        'part-column': { type: 'string' },
+        'route-part-column': { type: 'string' },
         json: { type: 'boolean' },
         md: { type: 'boolean' },
         csv: { type: 'boolean' },
@@ -102,22 +114,28 @@ export function main(argv: string[]): number {
     if (routeFile === undefined) throw new InputError('missing the route CSV file; see --help.');
     if (eventsFile === undefined) throw new InputError('missing the events CSV file; see --help.');
     if (rest.length) throw new InputError(`unexpected arguments: ${rest.join(' ')}`);
-    const route = parseRoute(read(routeFile, 'route'), {
+    const routes = parseRoutes(read(routeFile, 'route'), {
       stepColumn: values['route-step-column'],
       optionalColumn: values['optional-column'],
+      partColumn: values['route-part-column'],
     });
+    if (!routes.parts && values['part-column'] !== undefined) {
+      throw new InputError('--part-column needs routes per part: the route file has no part column (see --route-part-column).');
+    }
     const events = parseEvents(read(eventsFile, 'events'), {
       serialColumn: values['serial-column'],
       stepColumn: values['step-column'],
       resultColumn: values['result-column'],
       timeColumn: values['time-column'],
+      partColumn: values['part-column'],
     });
     if (values['rework-steps'] !== undefined && !listFlag(values['rework-steps']).length) throw new InputError('--rework-steps is empty.');
-    const report = check(route, events, {
+    const options = {
       reworkSteps: listFlag(values['rework-steps']),
       maxFails: int(values['max-fails'], '--max-fails', undefined, 0, 1_000_000),
       complete: values.complete === true,
-    });
+    };
+    const report = routes.parts ? checkParts(routes.parts, events, options) : check(routes.steps, events, options);
     const limit = int(values.limit, '--limit', 50, 1, 1_000_000)!;
     process.stdout.write(
       values.json ? jsonReport(report) : values.md ? mdReport(report, limit) : values.csv ? csvReport(report) : textReport(report, limit),

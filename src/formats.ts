@@ -1,5 +1,5 @@
 import { pct, TITLES } from './report.js';
-import { type Finding, KINDS, type Report } from './route.js';
+import { type Finding, KINDS, type Report, type StepYield, type Summary } from './route.js';
 
 /**
  * One CSV cell (RFC 4180): quoted when it holds a quote, comma or line break. Cells starting with = + - @ tab or CR
@@ -17,44 +17,91 @@ const csvLine = (cells: (string | number | undefined)[]) => cells.map(csvCell).j
 export const mdCell = (v: string | number) => String(v).replace(/\\/g, '\\\\').replace(/\|/g, '\\|').replace(/\r\n|\r|\n/g, ' ');
 
 export const CSV_HEADER = ['kind', 'serial', 'step', 'reached_step', 'count', 'serials', 'steps', 'rows', 'detail'];
+/** CSV header with routes per part: a part column after kind. */
+export const CSV_PART_HEADER = ['kind', 'part', 'serial', 'step', 'reached_step', 'count', 'serials', 'steps', 'rows', 'detail'];
 
 const byKind = (findings: Finding[]) => [...findings].sort((a, b) => KINDS.indexOf(a.kind) - KINDS.indexOf(b.kind));
 
 /**
  * Findings as CSV, one row per finding (all of them, --limit is ignored), in the text report's kind order. Lists
- * inside a cell (rows, steps) are space separated. No findings = header only.
+ * inside a cell (rows, steps) are space separated. No findings = header only. With routes per part the second
+ * column is the part (CSV_PART_HEADER).
  */
 export function csvReport(report: Report): string {
-  const lines = [csvLine(CSV_HEADER)];
+  const parts = report.parts !== undefined;
+  const lines = [csvLine(parts ? CSV_PART_HEADER : CSV_HEADER)];
   for (const f of byKind(report.findings)) {
-    lines.push(csvLine([f.kind, f.serial, f.step, f.reachedStep, f.count, f.serials, f.steps?.join(' '), f.rows.join(' '), f.message]));
+    const rest = [f.serial, f.step, f.reachedStep, f.count, f.serials, f.steps?.join(' '), f.rows.join(' '), f.message];
+    lines.push(csvLine(parts ? [f.kind, f.part, ...rest] : [f.kind, ...rest]));
   }
   return lines.join('\n') + '\n';
 }
 
-/** Markdown report: summary, per-step yield table, findings per kind (each list capped at `limit`). */
-export function mdReport(report: Report, limit = 50): string {
+const ffp = (s: Summary) => `${s.finishedFirstPass}${s.finished ? ` (${pct(s.finishedFirstPass / s.finished)})` : ''}`;
+
+function mdYield(yields: StepYield[]): string[] {
+  return [
+    '| step | units | first pass | FPY | passed (final) | fails | retests | records |',
+    '| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: |',
+    ...yields.map(
+      (y) =>
+        `| ${mdCell(y.step)}${y.optional ? ' (optional)' : ''} | ${y.units} | ${y.firstPass} | ${pct(y.fpy)} | ${y.passed} | ${y.fails} | ${y.records - y.units} | ${y.records} |`,
+    ),
+  ];
+}
+
+/** Markdown summary and per-step yield (single route). */
+function mdSingle(report: Report): string[] {
   const s = report.summary;
-  const out = [
+  return [
     '# Route check',
     '',
     '| serials | records | route steps | required | finished | finished first pass | WIP | RTY |',
     '| ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |',
-    `| ${s.serials} | ${s.events} | ${s.steps} | ${s.requiredSteps} | ${s.finished} | ${s.finishedFirstPass}${s.finished ? ` (${pct(s.finishedFirstPass / s.finished)})` : ''} | ${s.wip} | ${pct(s.rty)} |`,
+    `| ${s.serials} | ${s.events} | ${s.steps} | ${s.requiredSteps} | ${s.finished} | ${ffp(s)} | ${s.wip} | ${pct(s.rty)} |`,
     '',
     `Order: ${s.timeOrdered ? 'replayed by timestamp' : 'file order'}.${s.hasResult ? '' : ' No result column: every record counts as a pass.'}` +
       `${s.reworkEvents ? ` Rework records: ${s.reworkEvents}.` : ''}${s.unknownEvents ? ` Records at steps not on the route: ${s.unknownEvents}.` : ''}`,
     '',
     '## Yield per step',
     '',
-    '| step | units | first pass | FPY | passed (final) | fails | retests | records |',
-    '| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: |',
+    ...mdYield(report.yields),
   ];
-  for (const y of report.yields) {
+}
+
+/** Markdown summary and per-part sections (routes per part). */
+function mdParts(report: Report): string[] {
+  const s = report.summary;
+  const out = [
+    '# Route check',
+    '',
+    '| serials | records | part routes | finished | finished first pass | WIP | serials of parts without a route |',
+    '| ---: | ---: | ---: | ---: | ---: | ---: | ---: |',
+    `| ${s.serials} | ${s.events} | ${s.parts} | ${s.finished} | ${ffp(s)} | ${s.wip} | ${s.unknownPartSerials} |`,
+    '',
+    `Order: ${s.timeOrdered ? 'replayed by timestamp' : 'file order'}.${s.hasResult ? '' : ' No result column: every record counts as a pass.'}` +
+      `${s.reworkEvents ? ` Rework records: ${s.reworkEvents}.` : ''}${s.unknownEvents ? ` Records at steps not on the route: ${s.unknownEvents}.` : ''}` +
+      `${s.unknownPartEvents ? ` Records of parts without a route: ${s.unknownPartEvents}.` : ''}`,
+  ];
+  for (const p of report.parts!) {
+    const ps = p.summary;
     out.push(
-      `| ${mdCell(y.step)}${y.optional ? ' (optional)' : ''} | ${y.units} | ${y.firstPass} | ${pct(y.fpy)} | ${y.passed} | ${y.fails} | ${y.records - y.units} | ${y.records} |`,
+      '',
+      `## Part ${mdCell(p.part)}`,
+      '',
+      '| serials | records | route steps | required | finished | finished first pass | WIP | RTY |',
+      '| ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |',
+      `| ${ps.serials} | ${ps.events} | ${ps.steps} | ${ps.requiredSteps} | ${ps.finished} | ${ffp(ps)} | ${ps.wip} | ${pct(ps.rty)} |`,
+      '',
+      ...mdYield(p.yields),
     );
   }
+  return out;
+}
+
+/** Markdown report: summary, per-step yield table, findings per kind (each list capped at `limit`). */
+export function mdReport(report: Report, limit = 50): string {
+  const out = report.parts ? mdParts(report) : mdSingle(report);
   out.push('', 'Retests = records after each unit\'s first record at the step. RTY = product of FPY over required steps.');
   if (!report.findings.length) {
     out.push('', 'No findings.');

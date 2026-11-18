@@ -1,0 +1,217 @@
+{
+  "summary": {
+    "steps": 8,
+    "requiredSteps": 7,
+    "events": 80,
+    "serials": 10,
+    "finished": 9,
+    "wip": 1,
+    "finishedFirstPass": 4,
+    "rty": 0.5925925925925926,
+    "reworkEvents": 5,
+    "unknownEvents": 1,
+    "timeOrdered": true,
+    "hasResult": true
+  },
+  "yields": [
+    {
+      "step": "SMT",
+      "optional": false,
+      "units": 10,
+      "firstPass": 10,
+      "fpy": 1,
+      "passed": 10,
+      "records": 10,
+      "fails": 0
+    },
+    {
+      "step": "AOI",
+      "optional": false,
+      "units": 9,
+      "firstPass": 9,
+      "fpy": 1,
+      "passed": 9,
+      "records": 9,
+      "fails": 0
+    },
+    {
+      "step": "ICT",
+      "optional": false,
+      "units": 9,
+      "firstPass": 8,
+      "fpy": 0.8888888888888888,
+      "passed": 9,
+      "records": 10,
+      "fails": 1
+    },
+    {
+      "step": "FLASH",
+      "optional": false,
+      "units": 9,
+      "firstPass": 9,
+      "fpy": 1,
+      "passed": 9,
+      "records": 10,
+      "fails": 0
+    },
+    {
+      "step": "CALIB",
+      "optional": false,
+      "units": 9,
+      "firstPass": 9,
+      "fpy": 1,
+      "passed": 9,
+      "records": 11,
+      "fails": 0
+    },
+    {
+      "step": "BURNIN",
+      "optional": true,
+      "units": 1,
+      "firstPass": 1,
+      "fpy": 1,
+      "passed": 1,
+      "records": 1,
+      "fails": 0
+    },
+    {
+      "step": "FCT",
+      "optional": false,
+      "units": 9,
+      "firstPass": 6,
+      "fpy": 0.6666666666666666,
+      "passed": 7,
+      "records": 14,
+      "fails": 6
+    },
+    {
+      "step": "PACK",
+      "optional": false,
+      "units": 9,
+      "firstPass": 9,
+      "fpy": 1,
+      "passed": 9,
+      "records": 9,
+      "fails": 0
+    }
+  ],
+  "findings": [
+    {
+      "kind": "skipped-step",
+      "serial": "MTR-0003",
+      "step": "AOI",
+      "reachedStep": "ICT",
+      "rows": [
+        10
+      ],
+      "message": "MTR-0003 ran ICT (row 10) but never passed AOI"
+    },
+    {
+      "kind": "out-of-order",
+      "serial": "MTR-0005",
+      "step": "FLASH",
+      "reachedStep": "CALIB",
+      "rows": [
+        33
+      ],
+      "message": "MTR-0005 ran CALIB (row 33) before passing FLASH (passed later, row 38)"
+    },
+    {
+      "kind": "continued-after-fail",
+      "serial": "MTR-0004",
+      "step": "FCT",
+      "reachedStep": "PACK",
+      "rows": [
+        37,
+        43
+      ],
+      "message": "MTR-0004 failed FCT (row 37) and ran PACK (row 43) without passing FCT again"
+    },
+    {
+      "kind": "failed-after-later-step",
+      "serial": "MTR-0007",
+      "step": "FCT",
+      "reachedStep": "PACK",
+      "rows": [
+        64,
+        60
+      ],
+      "message": "MTR-0007 passed PACK (row 60) but its latest result at FCT is fail (row 64)"
+    },
+    {
+      "kind": "too-many-fails",
+      "serial": "MTR-0010",
+      "step": "FCT",
+      "rows": [
+        70,
+        75,
+        78
+      ],
+      "count": 3,
+      "message": "MTR-0010 failed FCT 3 times (limit 2)"
+    },
+    {
+      "kind": "incomplete",
+      "serial": "MTR-0003",
+      "step": "AOI",
+      "steps": [
+        "AOI"
+      ],
+      "rows": [],
+      "message": "MTR-0003 has not passed AOI"
+    },
+    {
+      "kind": "incomplete",
+      "serial": "MTR-0004",
+      "step": "FCT",
+      "steps": [
+        "FCT"
+      ],
+      "rows": [],
+      "message": "MTR-0004 has not passed FCT"
+    },
+    {
+      "kind": "incomplete",
+      "serial": "MTR-0006",
+      "step": "ICT",
+      "steps": [
+        "ICT",
+        "FLASH",
+        "CALIB",
+        "FCT",
+        "PACK"
+      ],
+      "rows": [],
+      "message": "MTR-0006 has not passed ICT, FLASH, CALIB, FCT, PACK"
+    },
+    {
+      "kind": "incomplete",
+      "serial": "MTR-0007",
+      "step": "FCT",
+      "steps": [
+        "FCT"
+      ],
+      "rows": [],
+      "message": "MTR-0007 has not passed FCT"
+    },
+    {
+      "kind": "unknown-step",
+      "step": "XRAY",
+      "rows": [
+        48
+      ],
+      "count": 1,
+      "serials": 1,
+      "message": "step \"XRAY\" is not on the route (1 row, 1 serial, first row 48); add it to the route or to --rework-steps"
+    }
+  ],
+  "counts": {
+    "skipped-step": 1,
+    "out-of-order": 1,
+    "continued-after-fail": 1,
+    "failed-after-later-step": 1,
+    "too-many-fails": 1,
+    "incomplete": 4,
+    "unknown-step": 1
+  }
+}

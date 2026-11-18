@@ -16,6 +16,8 @@ export interface Event {
   pass: boolean;
   row: number;
   timestamp?: string;
+  /** Part number (when the file has a part column and the cell is not empty). */
+  part?: string;
   /** `timestamp` as milliseconds (zone-less stamps are compared as they are, like UTC). Set when the file has times. */
   time?: number;
 }
@@ -25,6 +27,8 @@ export interface EventColumns {
   stepColumn?: string;
   resultColumn?: string;
   timeColumn?: string;
+  /** Part number column (default "part", optional unless given). */
+  partColumn?: string;
 }
 
 export interface Events {
@@ -33,6 +37,29 @@ export interface Events {
   hasResult: boolean;
   /** True when rows were replayed by timestamp (otherwise file order). */
   timeOrdered: boolean;
+  /** True when the file had a part column. */
+  hasPart?: boolean;
+}
+
+/** The route of one part number (route.csv with a part column). */
+export interface PartRoute {
+  part: string;
+  steps: Step[];
+}
+
+export interface RouteColumns {
+  stepColumn?: string;
+  optionalColumn?: string;
+  /** Part number column (default "part", optional unless given); see parseRoutes. */
+  partColumn?: string;
+}
+
+/** A route file: one route (`parts` undefined) or one route per part number. */
+export interface Routes {
+  /** Every step row of the file, in file order (the route itself when there is no part column). */
+  steps: Step[];
+  /** Routes per part number, in order of first appearance; set only when the file has a part column. */
+  parts?: PartRoute[];
 }
 
 export const PASS_WORDS = new Set(['pass', 'passed', 'p', 'ok', 'good', 'g', 'y', 'yes', 'true', '1']);
@@ -67,17 +94,19 @@ function cell(cells: string[], i: number): string {
 /** Step names are matched without regard to case; this is the lookup key. */
 export const stepKey = (name: string) => name.trim().toLowerCase();
 
-export function parseRoute(text: string, columns: { stepColumn?: string; optionalColumn?: string } = {}): Step[] {
-  const t = table(text, 'route');
-  const s = t.index(columns.stepColumn ?? 'step', true, 'step name, one row per step in route order');
-  const o = t.index(columns.optionalColumn ?? 'optional', columns.optionalColumn !== undefined, 'optional step y/n');
+function routeSteps(
+  rows: { cells: string[]; row: number }[],
+  s: number,
+  o: number,
+  label: string,
+): Step[] {
   const steps: Step[] = [];
   const seen = new Map<string, number>();
-  for (const { cells, row } of t.rows) {
+  for (const { cells, row } of rows) {
     const name = cell(cells, s);
     if (!name) throw new InputError(`route row ${row}: step name is empty.`);
     const key = stepKey(name);
-    if (seen.has(key)) throw new InputError(`route row ${row}: step "${name}" is already on the route (row ${seen.get(key)}).`);
+    if (seen.has(key)) throw new InputError(`route row ${row}: step "${name}" is already on the ${label} (row ${seen.get(key)}).`);
     seen.set(key, row);
     const flag = cell(cells, o).toLowerCase();
     if (!YES_WORDS.has(flag) && !NO_WORDS.has(flag)) {
@@ -85,9 +114,51 @@ export function parseRoute(text: string, columns: { stepColumn?: string; optiona
     }
     steps.push({ name, optional: YES_WORDS.has(flag), row });
   }
+  return steps;
+}
+
+/** Parses a single route (a part column, if any, is ignored; use parseRoutes for routes per part number). */
+export function parseRoute(text: string, columns: { stepColumn?: string; optionalColumn?: string } = {}): Step[] {
+  const t = table(text, 'route');
+  const s = t.index(columns.stepColumn ?? 'step', true, 'step name, one row per step in route order');
+  const o = t.index(columns.optionalColumn ?? 'optional', columns.optionalColumn !== undefined, 'optional step y/n');
+  const steps = routeSteps(t.rows, s, o, 'route');
   if (!steps.length) throw new InputError('route: no steps.');
   if (steps.every((st) => st.optional)) throw new InputError('route: every step is optional; mark at least one as required.');
   return steps;
+}
+
+/**
+ * Parses a route file that may hold one route per part number. Without a part column (default "part") this is
+ * parseRoute. With one, rows are grouped by part (matched without regard to case, first spelling kept; rows of a
+ * part keep file order and may be interleaved with other parts); every row needs a part, and each part's route is
+ * checked like a single route (no repeated step, at least one required step).
+ */
+export function parseRoutes(text: string, columns: RouteColumns = {}): Routes {
+  const t = table(text, 'route');
+  const p = t.index(columns.partColumn ?? 'part', columns.partColumn !== undefined, 'part number of each route row');
+  if (p < 0) return { steps: parseRoute(text, columns) };
+  const s = t.index(columns.stepColumn ?? 'step', true, 'step name, one row per step in route order');
+  const o = t.index(columns.optionalColumn ?? 'optional', columns.optionalColumn !== undefined, 'optional step y/n');
+  const groups = new Map<string, { part: string; rows: { cells: string[]; row: number }[] }>();
+  for (const r of t.rows) {
+    const part = cell(r.cells, p);
+    if (!part) throw new InputError(`route row ${r.row}: part is empty (the route file has a part column, so every row needs one).`);
+    const key = stepKey(part);
+    let g = groups.get(key);
+    if (!g) groups.set(key, (g = { part, rows: [] }));
+    g.rows.push(r);
+  }
+  if (!groups.size) throw new InputError('route: no steps.');
+  const parts: PartRoute[] = [];
+  for (const g of groups.values()) {
+    const steps = routeSteps(g.rows, s, o, `route of part "${g.part}"`);
+    if (steps.every((st) => st.optional)) {
+      throw new InputError(`route: every step of part "${g.part}" is optional; mark at least one as required.`);
+    }
+    parts.push({ part: g.part, steps });
+  }
+  return { steps: parts.flatMap((x) => x.steps).sort((a, b) => a.row - b.row), parts };
 }
 
 export function parseEvents(text: string, columns: EventColumns = {}): Events {
@@ -96,6 +167,7 @@ export function parseEvents(text: string, columns: EventColumns = {}): Events {
   const st = t.index(columns.stepColumn ?? 'step', true, 'station / step name');
   const re = t.index(columns.resultColumn ?? 'result', columns.resultColumn !== undefined, 'pass / fail');
   const ts = t.index(columns.timeColumn ?? 'timestamp', columns.timeColumn !== undefined, 'timestamp');
+  const pa = t.index(columns.partColumn ?? 'part', columns.partColumn !== undefined, 'part number');
   const events: Event[] = [];
   let zonedFirst: { zoned: boolean; row: number } | undefined;
   for (const { cells, row } of t.rows) {
@@ -115,6 +187,10 @@ export function parseEvents(text: string, columns: EventColumns = {}): Events {
       }
     }
     const ev: Event = { serial, step, pass, row };
+    if (pa >= 0) {
+      const part = cell(cells, pa);
+      if (part) ev.part = part;
+    }
     if (ts >= 0) {
       const stamp = cell(cells, ts);
       if (!stamp) throw new InputError(`events row ${row}: no timestamp (the file has a timestamp column, so every row needs one).`);
@@ -136,9 +212,9 @@ export function parseEvents(text: string, columns: EventColumns = {}): Events {
   if (ts >= 0) {
     // Stable: equal times keep file order.
     const order = events.map((e, i) => ({ e, i })).sort((a, b) => a.e.time! - b.e.time! || a.i - b.i);
-    return { events: order.map((x) => x.e), hasResult: re >= 0, timeOrdered: true };
+    return { events: order.map((x) => x.e), hasResult: re >= 0, timeOrdered: true, hasPart: pa >= 0 };
   }
-  return { events, hasResult: re >= 0, timeOrdered: false };
+  return { events, hasResult: re >= 0, timeOrdered: false, hasPart: pa >= 0 };
 }
 
 const STAMP = /^(\d{4})-(\d{2})-(\d{2})[T ](\d{2}):(\d{2})(?::(\d{2})(?:[.,](\d{1,9}))?)?(?: ?(Z|[+-]\d{2}:?\d{2}))?$/i;
