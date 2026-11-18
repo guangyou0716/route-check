@@ -1,0 +1,13 @@
+route-check: 12 serials, 51 records, 4 route steps (4 required), replayed by timestamp
+Finished: 11 (first pass 6, 54.5%), WIP: 1, RTY: 61.1%
+
+Step  Units  First pass     FPY  Passed  Records  Fails
+SMT      12          12  100.0%      12       12      0
+ICT      12          11   91.7%      12       13      1
+FCT      12           8   66.7%      11       15      4
+PACK     11          11  100.0%      11       11      0
+
+Findings: 1
+
+Continued after fail (a later step ran while the latest result here was fail): 1
+  - BRD-210 failed FCT (row 43) and ran PACK (row 49) without passing FCT again

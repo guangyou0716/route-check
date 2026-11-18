@@ -18,6 +18,8 @@ export interface Event {
   timestamp?: string;
   /** Part number (when the file has a part column and the cell is not empty). */
   part?: string;
+  /** Station (machine) under the step, with a station column (empty string for an empty cell). */
+  station?: string;
   /** `timestamp` as milliseconds (zone-less stamps are compared as they are, like UTC). Set when the file has times. */
   time?: number;
 }
@@ -29,6 +31,8 @@ export interface EventColumns {
   timeColumn?: string;
   /** Part number column (default "part", optional unless given). */
   partColumn?: string;
+  /** Station (machine) column under a step; opt-in (no default), required when given. Turns on yield per station. */
+  stationColumn?: string;
 }
 
 export interface Events {
@@ -39,6 +43,8 @@ export interface Events {
   timeOrdered: boolean;
   /** True when the file had a part column. */
   hasPart?: boolean;
+  /** True when a station column was given (yield per station). */
+  hasStation?: boolean;
 }
 
 /** The route of one part number (route.csv with a part column). */
@@ -168,6 +174,10 @@ export function parseEvents(text: string, columns: EventColumns = {}): Events {
   const re = t.index(columns.resultColumn ?? 'result', columns.resultColumn !== undefined, 'pass / fail');
   const ts = t.index(columns.timeColumn ?? 'timestamp', columns.timeColumn !== undefined, 'timestamp');
   const pa = t.index(columns.partColumn ?? 'part', columns.partColumn !== undefined, 'part number');
+  const sn = columns.stationColumn === undefined ? -1 : t.index(columns.stationColumn, true, 'station / machine under a step');
+  if (sn >= 0 && (sn === se || sn === st)) {
+    throw new InputError(`events: the station column "${columns.stationColumn}" is also the ${sn === se ? 'serial' : 'step'} column; give the machine column.`);
+  }
   const events: Event[] = [];
   let zonedFirst: { zoned: boolean; row: number } | undefined;
   for (const { cells, row } of t.rows) {
@@ -191,6 +201,7 @@ export function parseEvents(text: string, columns: EventColumns = {}): Events {
       const part = cell(cells, pa);
       if (part) ev.part = part;
     }
+    if (sn >= 0) ev.station = cell(cells, sn);
     if (ts >= 0) {
       const stamp = cell(cells, ts);
       if (!stamp) throw new InputError(`events row ${row}: no timestamp (the file has a timestamp column, so every row needs one).`);
@@ -212,9 +223,15 @@ export function parseEvents(text: string, columns: EventColumns = {}): Events {
   if (ts >= 0) {
     // Stable: equal times keep file order.
     const order = events.map((e, i) => ({ e, i })).sort((a, b) => a.e.time! - b.e.time! || a.i - b.i);
-    return { events: order.map((x) => x.e), hasResult: re >= 0, timeOrdered: true, hasPart: pa >= 0 };
+    return withStation({ events: order.map((x) => x.e), hasResult: re >= 0, timeOrdered: true, hasPart: pa >= 0 }, sn);
   }
-  return { events, hasResult: re >= 0, timeOrdered: false, hasPart: pa >= 0 };
+  return withStation({ events, hasResult: re >= 0, timeOrdered: false, hasPart: pa >= 0 }, sn);
+}
+
+/** hasStation only when a station column was given, so the result is unchanged without one. */
+function withStation(e: Events, sn: number): Events {
+  if (sn >= 0) e.hasStation = true;
+  return e;
 }
 
 const STAMP = /^(\d{4})-(\d{2})-(\d{2})[T ](\d{2}):(\d{2})(?::(\d{2})(?:[.,](\d{1,9}))?)?(?: ?(Z|[+-]\d{2}:?\d{2}))?$/i;

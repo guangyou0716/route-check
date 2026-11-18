@@ -1,0 +1,74 @@
+{
+  "summary": {
+    "steps": 4,
+    "requiredSteps": 4,
+    "events": 51,
+    "serials": 12,
+    "finished": 11,
+    "wip": 1,
+    "finishedFirstPass": 6,
+    "rty": 0.611111111111111,
+    "reworkEvents": 0,
+    "unknownEvents": 0,
+    "timeOrdered": true,
+    "hasResult": true
+  },
+  "yields": [
+    {
+      "step": "SMT",
+      "optional": false,
+      "units": 12,
+      "firstPass": 12,
+      "fpy": 1,
+      "passed": 12,
+      "records": 12,
+      "fails": 0
+    },
+    {
+      "step": "ICT",
+      "optional": false,
+      "units": 12,
+      "firstPass": 11,
+      "fpy": 0.9166666666666666,
+      "passed": 12,
+      "records": 13,
+      "fails": 1
+    },
+    {
+      "step": "FCT",
+      "optional": false,
+      "units": 12,
+      "firstPass": 8,
+      "fpy": 0.6666666666666666,
+      "passed": 11,
+      "records": 15,
+      "fails": 4
+    },
+    {
+      "step": "PACK",
+      "optional": false,
+      "units": 11,
+      "firstPass": 11,
+      "fpy": 1,
+      "passed": 11,
+      "records": 11,
+      "fails": 0
+    }
+  ],
+  "findings": [
+    {
+      "kind": "continued-after-fail",
+      "serial": "BRD-210",
+      "step": "FCT",
+      "reachedStep": "PACK",
+      "rows": [
+        43,
+        49
+      ],
+      "message": "BRD-210 failed FCT (row 43) and ran PACK (row 49) without passing FCT again"
+    }
+  ],
+  "counts": {
+    "continued-after-fail": 1
+  }
+}
