@@ -119,3 +119,25 @@ if (
   fail(`stations: status ${stn.status} ${JSON.stringify(fs)} ${stn.stderr}`);
 }
 console.log(`smoke: ok --station-column on the large log in ${ms2} ms: 4 FCT stations, counts add up, FCT-0 / FCT-2 hold the fails`);
+
+// Dwell limits on the same large log: steps are 1 min apart, so SMT>PACK is 6 min, 8 min for the 2,000 units
+// retested at FCT after REPAIR (over 6m, exactly 6m is not over); unit 1234 never passed FCT, so FCT>PACK skips it.
+const t3 = Date.now();
+const dw = run(cli, [join(dir, 'route.csv'), join(dir, 'events.csv'), '--rework-steps', 'REPAIR', '--json', '--max-dwell', 'SMT>PACK=6m,FCT>PACK=1m']);
+const dd = dw.stdout ? JSON.parse(dw.stdout) : {};
+const ms3 = Date.now() - t3;
+const [sp, fp] = dd.dwell ?? [];
+if (
+  dw.status !== 1 ||
+  sp?.units !== 100_000 ||
+  sp?.exceeded !== 2000 ||
+  sp?.maxMs !== 8 * 60_000 ||
+  sp?.medianMs !== 6 * 60_000 ||
+  fp?.units !== 99_999 ||
+  fp?.exceeded !== 0 ||
+  dd.counts?.['dwell-exceeded'] !== 2000 ||
+  dd.findings?.length !== 2002
+) {
+  fail(`dwell: status ${dw.status} ${JSON.stringify(dd.dwell)} ${JSON.stringify(dd.counts)} ${dw.stderr}`);
+}
+console.log(`smoke: ok --max-dwell on the large log in ${ms3} ms: SMT>PACK 2,000 of 100,000 over 6m, FCT>PACK 99,999 measured`);

@@ -1,0 +1,7 @@
+kind,serial,step,reached_step,count,serials,steps,rows,detail
+dwell-exceeded,PCB-102,SMT,PACK,,,,6 11,PCB-102 reached PACK (row 11) 1h11m after passing SMT (row 6); limit 50m
+dwell-exceeded,PCB-104,SMT,PACK,,,,16 21,PCB-104 reached PACK (row 21) 1h11m after passing SMT (row 16); limit 50m
+dwell-exceeded,PCB-106,SMT,PACK,,,,26 31,PCB-106 reached PACK (row 31) 1h11m after passing SMT (row 26); limit 50m
+dwell-exceeded,PCB-108,SMT,PACK,,,,36 41,PCB-108 reached PACK (row 41) 1h11m after passing SMT (row 36); limit 50m
+dwell-exceeded,PCB-109,SMT,PACK,,,,42 48,PCB-109 reached PACK (row 48) 1h11m after passing SMT (row 42); limit 50m
+dwell-exceeded,PCB-111,SMT,PACK,,,,52 59,PCB-111 reached PACK (row 59) 1h40m after passing SMT (row 52); limit 50m

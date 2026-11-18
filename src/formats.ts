@@ -1,5 +1,6 @@
+import type { DwellStat } from './dwell.js';
 import type { PeriodYield } from './periods.js';
-import { pct, periodRows, periodTitle, STATION_DETAIL, stationRows, TITLES } from './report.js';
+import { DWELL_DETAIL, dwellRows, pct, periodRows, periodTitle, STATION_DETAIL, stationRows, TITLES } from './report.js';
 import { type Finding, KINDS, type Report, type StepYield, type Summary } from './route.js';
 
 /**
@@ -82,6 +83,20 @@ function mdPeriods(report: Report, periods: PeriodYield[] | undefined, yields: S
   ];
 }
 
+/** Dwell section (--max-dwell only); `level` is the heading prefix. */
+function mdDwell(dwell: DwellStat[] | undefined, level: string): string[] {
+  if (!dwell) return [];
+  const out = ['', `${level} Dwell between steps`, '', `${mdCell(DWELL_DETAIL[0].toUpperCase() + DWELL_DETAIL.slice(1))}.`, ''];
+  if (!dwell.length) return [...out, 'No step pair on this route.'];
+  const [head, ...body] = dwellRows(dwell);
+  return [
+    ...out,
+    `| ${head.map((h) => mdCell(h.toLowerCase())).join(' | ')} |`,
+    `| --- | ${head.slice(1).map(() => '---:').join(' | ')} |`,
+    ...body.map((r) => `| ${r.map(mdCell).join(' | ')} |`),
+  ];
+}
+
 /** Markdown summary and per-step yield (single route). */
 function mdSingle(report: Report): string[] {
   const s = report.summary;
@@ -100,6 +115,7 @@ function mdSingle(report: Report): string[] {
     ...mdYield(report.yields),
     ...mdStations(report.yields, '##'),
     ...mdPeriods(report, report.periods, report.yields, '##'),
+    ...mdDwell(report.dwell, '##'),
   ];
 }
 
@@ -130,6 +146,7 @@ function mdParts(report: Report): string[] {
       ...mdYield(p.yields),
       ...mdStations(p.yields, '###'),
       ...mdPeriods(report, p.periods, p.yields, '###'),
+      ...mdDwell(p.dwell, '###'),
     );
   }
   return out;

@@ -1,3 +1,4 @@
+import { type DwellLimit, type DwellStat, type RouteDwell, formatDuration, median, resolveDwell } from './dwell.js';
 import { InputError } from './errors.js';
 import { type Event, type Events, type PartRoute, type Step, stepKey } from './input.js';
 import { type PeriodInfo, type Periods, type PeriodSettings, type PeriodYield, makePeriods } from './periods.js';
@@ -8,6 +9,7 @@ export type FindingKind =
   | 'continued-after-fail'
   | 'failed-after-later-step'
   | 'too-many-fails'
+  | 'dwell-exceeded'
   | 'incomplete'
   | 'unknown-step'
   | 'unknown-part'
@@ -19,6 +21,7 @@ export const KINDS: FindingKind[] = [
   'continued-after-fail',
   'failed-after-later-step',
   'too-many-fails',
+  'dwell-exceeded',
   'incomplete',
   'unknown-step',
   'unknown-part',
@@ -33,12 +36,14 @@ export interface Finding {
   step?: string;
   /**
    * Later step the unit reached while `step` was not passed (skipped-step, out-of-order, continued-after-fail), or the
-   * later step it had already passed when `step` was re-run and failed (failed-after-later-step).
+   * later step it had already passed when `step` was re-run and failed (failed-after-later-step), or the step the
+   * unit arrived at too late (dwell-exceeded; `step` is then the step it left).
    */
   reachedStep?: string;
   /**
    * Events rows: the row at the later step (skipped-step, out-of-order); fail row + later-step row
-   * (continued-after-fail, failed-after-later-step); fail rows (too-many-fails, first 20); rows at the step
+   * (continued-after-fail, failed-after-later-step, dwell-exceeded: pass row at the step left + first row at the
+   * step arrived at); fail rows (too-many-fails, first 20); rows at the step
    * (unknown-step, first 20); none (incomplete).
    */
   rows: number[];
@@ -55,6 +60,10 @@ export interface Finding {
   part?: string;
   /** part-conflict: every part seen for the serial, first one first. */
   parts?: string[];
+  /** dwell-exceeded: time from the latest pass at `step` to the first record at `reachedStep`, in milliseconds. */
+  dwellMs?: number;
+  /** dwell-exceeded: the --max-dwell limit of the pair, in milliseconds. */
+  limitMs?: number;
   message: string;
 }
 
@@ -124,6 +133,8 @@ export interface PartReport {
   yields: StepYield[];
   /** With byDay / shifts: this part's FPY per period. */
   periods?: PeriodYield[];
+  /** With maxDwell: dwell statistics of the pairs whose steps are both on this part's route. */
+  dwell?: DwellStat[];
 }
 
 export interface Report {
@@ -145,6 +156,8 @@ export interface Report {
    * out. Empty with routes per part (see each part's `periods`).
    */
   periods?: PeriodYield[];
+  /** With maxDwell only: dwell statistics per step pair, in flag order (empty with routes per part - see `parts`). */
+  dwell?: DwellStat[];
 }
 
 export interface CheckOptions extends PeriodSettings {
@@ -154,6 +167,12 @@ export interface CheckOptions extends PeriodSettings {
   maxFails?: number;
   /** Every unit should have finished: flag units that have not passed every required step. */
   complete?: boolean;
+  /**
+   * Maximum dwell between two route steps (needs timestamps). Per unit and pair, dwell = time of the unit's first
+   * record at `to` minus the time of its latest pass at `from` before that record; over the limit = dwell-exceeded.
+   * Units that never passed `from` before reaching `to`, or never reached `to`, are not measured.
+   */
+  maxDwell?: DwellLimit[];
 }
 
 interface UnitEvent {
@@ -165,15 +184,24 @@ interface UnitEvent {
 }
 
 const ROWS_SHOWN = 20;
+const NO_PAIRS: readonly number[] = [];
+
+function needTimes(options: CheckOptions, input: Events): void {
+  if (options.maxDwell?.length && !input.timeOrdered) {
+    throw new InputError('--max-dwell needs a timestamp column in the events file (see --time-column).');
+  }
+}
 
 export function check(route: Step[], input: Events, options: CheckOptions = {}): Report {
   const periods = makePeriods(options, input);
-  const report = checkRoute(route, input, options, undefined, periods);
+  needTimes(options, input);
+  const dwell = options.maxDwell?.length ? resolveDwell(route, options.maxDwell, 'route') : undefined;
+  const report = checkRoute(route, input, options, undefined, periods, dwell);
   if (periods) report.periodSettings = periods.info;
   return report;
 }
 
-function checkRoute(route: Step[], input: Events, options: CheckOptions, part?: string, periods?: Periods): Report {
+function checkRoute(route: Step[], input: Events, options: CheckOptions, part?: string, periods?: Periods, dwell?: RouteDwell[]): Report {
   const index = new Map(route.map((s, i) => [stepKey(s.name), i]));
   const rework = new Set<string>();
   for (const r of options.reworkSteps ?? []) {
@@ -237,6 +265,15 @@ function checkRoute(route: Step[], input: Events, options: CheckOptions, part?: 
   const buckets = new Map<number, { label: ReturnType<Periods['bucket']>; units: number; firstPass: number[]; tried: number[] }>();
   const unitBuckets = new Set<number>();
 
+  // Dwell limits: per unit the latest pass time at each step, and whether each pair was measured already.
+  const lastPassTime: (number | undefined)[] = new Array(n).fill(undefined);
+  const lastPassRow: number[] = new Array(n).fill(0);
+  const pairsByTo = new Map<number, number[]>();
+  (dwell ?? []).forEach((d, i) => pairsByTo.set(d.to, [...(pairsByTo.get(d.to) ?? []), i]));
+  const dwellDone: boolean[] = new Array(dwell?.length ?? 0).fill(false);
+  const dwellValues: number[][] = (dwell ?? []).map(() => []);
+  const dwellExceeded: number[] = new Array(dwell?.length ?? 0).fill(0);
+
   for (const [serial, list] of units) {
     latest.fill(undefined);
     failCount.fill(0);
@@ -244,6 +281,10 @@ function checkRoute(route: Step[], input: Events, options: CheckOptions, part?: 
     reportedFail.fill(false);
     for (const r of failRows) r.length = 0;
     unitBuckets.clear();
+    if (dwell) {
+      lastPassTime.fill(undefined);
+      dwellDone.fill(false);
+    }
     let anyFail = false;
 
     for (const ev of list) {
@@ -265,6 +306,33 @@ function checkRoute(route: Step[], input: Events, options: CheckOptions, part?: 
         } else if (latest[j] === undefined && required[j] && !missing[j]) {
           missing[j] = { reached: k, row: ev.row };
         }
+      }
+      // Dwell: the unit's first record at a pair's TO step, measured from its latest pass at the FROM step.
+      for (const pi of pairsByTo.get(k) ?? NO_PAIRS) {
+        if (dwellDone[pi]) continue;
+        dwellDone[pi] = true;
+        const d = dwell![pi];
+        const since = lastPassTime[d.from];
+        if (since === undefined) continue;
+        const dwellMs = ev.time! - since;
+        dwellValues[pi].push(dwellMs);
+        if (dwellMs > d.limit.limitMs) {
+          dwellExceeded[pi]++;
+          findings.push({
+            kind: 'dwell-exceeded',
+            serial,
+            step: route[d.from].name,
+            reachedStep: route[k].name,
+            rows: [lastPassRow[d.from], ev.row],
+            dwellMs,
+            limitMs: d.limit.limitMs,
+            message: `${serial} reached ${route[k].name} (row ${ev.row}) ${formatDuration(dwellMs)} after passing ${route[d.from].name} (row ${lastPassRow[d.from]}); limit ${formatDuration(d.limit.limitMs)}`,
+          });
+        }
+      }
+      if (dwell && ev.pass) {
+        lastPassTime[k] = ev.time;
+        lastPassRow[k] = ev.row;
       }
       const y = yields[k];
       let sy: StationYield | undefined;
@@ -425,6 +493,17 @@ function checkRoute(route: Step[], input: Events, options: CheckOptions, part?: 
     counts,
   };
   if (periods) report.periods = periodYields(route, buckets);
+  if (dwell) {
+    report.dwell = dwell.map((d, i) => ({
+      from: route[d.from].name,
+      to: route[d.to].name,
+      limitMs: d.limit.limitMs,
+      units: dwellValues[i].length,
+      exceeded: dwellExceeded[i],
+      medianMs: dwellValues[i].length ? median(dwellValues[i]) : null,
+      maxMs: dwellValues[i].length ? dwellValues[i].reduce((a, b) => (b > a ? b : a)) : null,
+    }));
+  }
   return report;
 }
 
@@ -478,6 +557,16 @@ export function checkParts(parts: PartRoute[], input: Events, options: CheckOpti
   }
 
   const periods = makePeriods(options, input);
+  needTimes(options, input);
+  const dwell = new Map<string, RouteDwell[]>();
+  if (options.maxDwell?.length) {
+    for (const p of parts) dwell.set(stepKey(p.part), resolveDwell(p.steps, options.maxDwell, `route of part "${p.part}"`, true));
+    for (const l of options.maxDwell) {
+      if (![...dwell.values()].some((list) => list.some((d) => d.limit === l))) {
+        throw new InputError(`--max-dwell ${l.from}>${l.to}: no part route has both steps.`);
+      }
+    }
+  }
   const buckets = new Map<string, Event[]>(parts.map((p) => [stepKey(p.part), []]));
   const serialPart = new Map<string, string>();
   const conflicts = new Map<string, { parts: string[]; keys: Set<string>; rows: number[]; count: number }>();
@@ -511,9 +600,11 @@ export function checkParts(parts: PartRoute[], input: Events, options: CheckOpti
   const reports: PartReport[] = [];
   const findings: Finding[] = [];
   for (const p of parts) {
-    const r = checkRoute(p.steps, { ...input, events: buckets.get(stepKey(p.part))! }, options, p.part, periods);
+    const pd = options.maxDwell?.length ? dwell.get(stepKey(p.part)) : undefined;
+    const r = checkRoute(p.steps, { ...input, events: buckets.get(stepKey(p.part))! }, options, p.part, periods, pd);
     const pr: PartReport = { part: p.part, summary: r.summary, yields: r.yields };
     if (periods) pr.periods = r.periods;
+    if (pd) pr.dwell = r.dwell;
     reports.push(pr);
     findings.push(...r.findings);
   }
@@ -574,5 +665,6 @@ export function checkParts(parts: PartRoute[], input: Events, options: CheckOpti
     report.periodSettings = periods.info;
     report.periods = [];
   }
+  if (options.maxDwell?.length) report.dwell = [];
   return report;
 }

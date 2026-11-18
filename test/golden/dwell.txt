@@ -1,0 +1,23 @@
+route-check: 12 serials, 62 records, 4 route steps (4 required), replayed by timestamp
+Finished: 12 (first pass 6, 50.0%), WIP: 0, RTY: 55.6%, rework records: 7
+
+Step  Units  First pass     FPY  Passed  Records  Fails
+SMT      12          12  100.0%      12       12      0
+ICT      12          10   83.3%      12       14      2
+FCT      12           8   66.7%      12       17      5
+PACK     12          12  100.0%      12       12      0
+
+Dwell between steps (per unit: from its latest pass at the first step to its first record at the second; over the limit = finding):
+Steps       Limit  Units  Exceeded  Median    Max
+ICT > FCT     20m     12         0     14m    14m
+SMT > PACK    50m     12         6  56m30s  1h40m
+
+Findings: 6
+
+Dwell over the limit between steps (--max-dwell): 6
+  - PCB-102 reached PACK (row 11) 1h11m after passing SMT (row 6); limit 50m
+  - PCB-104 reached PACK (row 21) 1h11m after passing SMT (row 16); limit 50m
+  - PCB-106 reached PACK (row 31) 1h11m after passing SMT (row 26); limit 50m
+  - PCB-108 reached PACK (row 41) 1h11m after passing SMT (row 36); limit 50m
+  - PCB-109 reached PACK (row 48) 1h11m after passing SMT (row 42); limit 50m
+  - PCB-111 reached PACK (row 59) 1h40m after passing SMT (row 52); limit 50m

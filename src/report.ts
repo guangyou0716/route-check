@@ -1,3 +1,4 @@
+import { type DwellStat, formatDuration } from './dwell.js';
 import type { PeriodInfo, PeriodYield } from './periods.js';
 import { type FindingKind, KINDS, type Report, type StepYield, type Summary } from './route.js';
 
@@ -7,6 +8,7 @@ export const TITLES: Record<FindingKind, string> = {
   'continued-after-fail': 'Continued after fail (a later step ran while the latest result here was fail)',
   'failed-after-later-step': 'Failed after a later step (re-run failed after the unit had passed a later step)',
   'too-many-fails': 'Too many fails at one step (--max-fails)',
+  'dwell-exceeded': 'Dwell over the limit between steps (--max-dwell)',
   incomplete: 'Incomplete units (--complete)',
   'unknown-step': 'Steps not on the route',
   'unknown-part': 'Parts without a route',
@@ -104,6 +106,24 @@ export function periodRows(info: PeriodInfo, periods: PeriodYield[], yields: Ste
   ];
 }
 
+export const DWELL_DETAIL = "per unit: from its latest pass at the first step to its first record at the second; over the limit = finding";
+
+const dur = (ms: number | null) => (ms === null ? '-' : formatDuration(ms));
+
+/** Dwell table (--max-dwell only): one row per step pair. */
+export function dwellRows(dwell: DwellStat[]): string[][] {
+  return [
+    ['Steps', 'Limit', 'Units', 'Exceeded', 'Median', 'Max'],
+    ...dwell.map((d) => [`${d.from} > ${d.to}`, formatDuration(d.limitMs), String(d.units), String(d.exceeded), dur(d.medianMs), dur(d.maxMs)]),
+  ];
+}
+
+function dwellText(dwell: DwellStat[] | undefined, out: string[]): void {
+  if (!dwell) return;
+  out.push('', `Dwell between steps (${DWELL_DETAIL}):`);
+  out.push(dwell.length ? pad(dwellRows(dwell)) : 'No step pair on this route.');
+}
+
 function periodText(report: Report, periods: PeriodYield[] | undefined, yields: StepYield[], out: string[]): void {
   if (!report.periodSettings || !periods) return;
   const t = periodTitle(report.periodSettings);
@@ -127,6 +147,7 @@ export function textReport(report: Report, limit: number): string {
     out.push('', pad(yieldRows(report)));
     stationText(report.yields, out);
     periodText(report, report.periods, report.yields, out);
+    dwellText(report.dwell, out);
   }
   if (!report.findings.length) {
     out.push('', 'No findings.');
@@ -168,6 +189,7 @@ function partsText(report: Report, out: string[]): void {
     );
     stationText(p.yields, out);
     periodText(report, p.periods, p.yields, out);
+    dwellText(p.dwell, out);
   }
 }
 
